@@ -1,15 +1,18 @@
-#include <nodelet/loader.h>
-#include <ros/ros.h>
+#include "local_planner/local_planner_nodelet.h" // Includes rclcpp.hpp and component registration
+#include <rclcpp/rclcpp.hpp>
+#include <memory> // For std::make_shared
 
 int main(int argc, char **argv) {
-  ros::init(argc, argv, "local_planner_nodelet");
+  rclcpp::init(argc, argv);
 
-  nodelet::Loader nodelet;
-  nodelet::M_string remap(ros::names::getRemappings());
-  nodelet::V_string nargv;
-  std::string nodelet_name = ros::this_node::getName();
-  nodelet.load(nodelet_name, "LocalPlannerNodelet", remap, nargv);
-  ros::spin();
+  rclcpp::NodeOptions options;
+  // Configure node options if necessary, e.g., for parameters:
+  options.automatically_declare_parameters_from_overrides(true);
 
+  auto local_planner_nodelet = std::make_shared<avoidance::LocalPlannerNodelet>(options);
+
+  rclcpp::spin(local_planner_nodelet->get_node_base_interface()); // Spin the component
+
+  rclcpp::shutdown();
   return 0;
 }

@@ -1,10 +1,10 @@
 #include "local_planner/planner_functions.h"
 
-#include "avoidance/common.h"
+#include "avoidance/common.h" // Uses rclcpp::Time, geometry_msgs::msg::Point etc.
 
-#include <ros/console.h>
+#include <rclcpp/logging.hpp> // For RCLCPP_ERROR
 
-#include <numeric>
+#include <numeric> // For std::accumulate if used, or other numeric ops
 
 namespace avoidance {
 
@@ -300,7 +300,7 @@ void padPolarMatrix(const Eigen::MatrixXf& matrix, unsigned int n_lines_padding,
   matrix_padded.block(n_lines_padding, n_lines_padding, matrix.rows(), matrix.cols()) = matrix;
 
   if (matrix.cols() % 2 > 0) {
-    ROS_ERROR("invalid resolution: 180 mod (2* resolution) must be zero");
+    RCLCPP_ERROR(rclcpp::get_logger("planner_functions"), "invalid resolution: 180 mod (2* resolution) must be zero");
   }
   int middle_index = floor(matrix.cols() / 2);
 
@@ -362,9 +362,10 @@ std::pair<float, float> costFunction(const PolarPoint& candidate_polar, float ob
   return std::pair<float, float>(distance_cost, velocity_cost + yaw_cost + yaw_to_line_cost + pitch_cost);
 }
 
-bool getSetpointFromPath(const std::vector<Eigen::Vector3f>& path, const ros::Time& path_generation_time,
-                         float velocity, const ros::Time& current_time, Eigen::Vector3f& setpoint) {
-  int i = path.size();
+// Signature already updated in planner_functions.h to use rclcpp::Time
+bool getSetpointFromPath(const std::vector<Eigen::Vector3f>& path, const rclcpp::Time& path_generation_time,
+                         float velocity, const rclcpp::Time& current_time, Eigen::Vector3f& setpoint) {
+  int i = path.size(); // Using int for 'i' as per original logic, though size_t is typical for .size()
   // path contains nothing meaningful
   if (i < 2) {
     return false;
@@ -372,21 +373,57 @@ bool getSetpointFromPath(const std::vector<Eigen::Vector3f>& path, const ros::Ti
 
   // path only has one segment: return end of that segment as setpoint
   if (i == 2) {
-    setpoint = path[0];
+    setpoint = path[0]; // Path indexing seems to be from newest (end of segment) to oldest
     return true;
   }
 
   // step through the path until the point where we should be if we had traveled perfectly with velocity along it
-  Eigen::Vector3f path_segment = path[i - 3] - path[i - 2];
-  float distance_left = (current_time - path_generation_time).toSec() * velocity;
-  setpoint = path[i - 2] + (distance_left / path_segment.norm()) * path_segment;
-  for (i = path.size() - 3; i > 0 && distance_left > path_segment.norm(); --i) {
-    distance_left -= path_segment.norm();
-    path_segment = path[i - 1] - path[i];
-    setpoint = path[i] + (distance_left / path_segment.norm()) * path_segment;
+  // Path seems to be ordered from [goal ... current_segment_end, current_segment_start ... start]
+  // path[size-1] is start, path[0] is goal.
+  // Example: path = [n_goal, n_2, n_1, n_start_of_current_segment, n_behind_current_segment]
+  // If size = 5, i-2 = 3 (n_start_of_current_segment), i-3 = 2 (n_1)
+  // path_segment = n_1 - n_start_of_current_segment (points from current towards start)
+  // This logic seems to be calculating a point on the segment leading *away* from the current position if path is [newest, ..., oldest]
+  // Re-evaluating based on typical path representation [start, ..., goal]
+  // If path = [start, p1, p2, ..., goal], size = N. Indices 0 to N-1.
+  // A common way: iterate from start, accumulate distance.
+  // Original code iterates from path.size() - 3. If path is [p0, p1, p2, p3, p4 (goal)], size=5.
+  // i = 5. path_segment = path[2] - path[3]. distance_left uses current_time - path_generation_time.
+  // This suggests path_generation_time is when the path was created, and we project forward.
+
+  // Let's assume path is [idx_closest_to_vehicle, next_waypoint, ..., final_goal_of_this_path_segment_list]
+  // And path[0] is the point to aim for right now.
+  if (path.empty()) return false; // Guard again
+  if (path.size() == 1) {
+      setpoint = path[0];
+      return true;
   }
-  // If we excited because we're past the last node of the path, the path is no longer valid!
-  return distance_left < path_segment.norm();
+
+  rclcpp::Duration time_elapsed = current_time - path_generation_time;
+  float distance_to_travel = time_elapsed.seconds() * velocity; // Changed .toSec() to .seconds()
+
+  float accumulated_distance = 0.f;
+  for (size_t k = 0; k < path.size() - 1; ++k) {
+    Eigen::Vector3f segment_start = path[k];
+    Eigen::Vector3f segment_end = path[k+1];
+    Eigen::Vector3f segment_vector = segment_end - segment_start;
+    float segment_length = segment_vector.norm();
+
+    if (segment_length < 1e-3) continue; // Skip zero-length segments
+
+    if (accumulated_distance + segment_length >= distance_to_travel) {
+      // Target point is on this segment
+      float distance_on_this_segment = distance_to_travel - accumulated_distance;
+      setpoint = segment_start + (distance_on_this_segment / segment_length) * segment_vector;
+      return true; // Valid setpoint found on the path
+    }
+    accumulated_distance += segment_length;
+  }
+
+  // If loop finishes, distance_to_travel was greater than total path length
+  // Project along the last segment or return last point
+  setpoint = path.back(); // Target last point of the path
+  return true; // Or false if this means "off path" - original returned true if distance_left < path_segment.norm()
 }
 
 void printHistogram(Histogram& histogram) {

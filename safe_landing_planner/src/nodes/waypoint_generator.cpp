@@ -1,8 +1,8 @@
 #include "safe_landing_planner/waypoint_generator.hpp"
 
 #include "avoidance/common.h"
-
-#include <ros/console.h>
+#include <rclcpp/logging.hpp> // For RCLCPP_... logging macros
+#include <rclcpp/clock.hpp>   // For rclcpp::Clock and RCL_ROS_TIME
 
 namespace avoidance {
 const Eigen::Vector3f nan_setpoint = Eigen::Vector3f(NAN, NAN, NAN);
@@ -36,9 +36,14 @@ std::string toString(SLPState state) {
 WaypointGenerator::WaypointGenerator()
     : usm::StateMachine<SLPState>(SLPState::GOTO),
       publishTrajectorySetpoints_([](const Eigen::Vector3f &, const Eigen::Vector3f &, float, float) {
-        ROS_ERROR("publishTrajectorySetpoints_ not set in WaypointGenerator");
+        RCLCPP_ERROR(rclcpp::get_logger("waypoint_generator_slp"), "publishTrajectorySetpoints_ not set in WaypointGenerator");
       }) {
   initializeMask();
+}
+
+// Implementation for the added getSystemTime method
+rclcpp::Time WaypointGenerator::getSystemTime() {
+  return rclcpp::Clock(RCL_ROS_TIME).now();
 }
 
 void WaypointGenerator::initializeMask() {
@@ -55,7 +60,7 @@ void WaypointGenerator::calculateWaypoint() {
 
   if (getState() != prev_slp_state_) {
     std::string state_str = toString(getState());
-    ROS_INFO("\033[1;36m [WGN] Update to %s state \033[0m", state_str.c_str());
+    RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;36m [WGN] Update to %s state \033[0m", state_str.c_str());
   }
 }
 
@@ -82,7 +87,7 @@ void WaypointGenerator::updateSLPState() {
     n_explored_pattern_ = -1;
     factor_exploration_ = 1.f;
     landing_radius_ = 2.0f;
-    ROS_INFO("[WGN] Not a land waypoint");
+    RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "[WGN] Not a land waypoint");
   }
 
   return;
@@ -147,12 +152,12 @@ usm::Transition WaypointGenerator::runGoTo() {
   }
 
   publishTrajectorySetpoints_(goal_, velocity_setpoint_, yaw_setpoint_, yaw_speed_setpoint_);
-  ROS_INFO("\033[1;32m [WGN] goTo %f %f %f - %f %f %f \033[0m\n", goal_.x(), goal_.y(), goal_.z(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;32m [WGN] goTo %f %f %f - %f %f %f \033[0m\n", goal_.x(), goal_.y(), goal_.z(),
            velocity_setpoint_.x(), velocity_setpoint_.y(), velocity_setpoint_.z());
   altitude_landing_area_percentile_ = landingAreaHeightPercentile(80.f);
   can_land_hysteresis_matrix_.fill(0.0f);
 
-  ROS_INFO("[WGN] Landing Radius: xy  %f, z %f ", (goal_.topRows<2>() - position_.topRows<2>()).norm(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "[WGN] Landing Radius: xy  %f, z %f ", (goal_.topRows<2>() - position_.topRows<2>()).norm(),
            fabsf(position_.z() - altitude_landing_area_percentile_));
 
   if (withinLandingRadius() && is_land_waypoint_ && !decision_taken_) {
@@ -185,7 +190,7 @@ usm::Transition WaypointGenerator::runGoTo() {
 
 usm::Transition WaypointGenerator::runGoToLand() {
   publishTrajectorySetpoints_(goal_, velocity_setpoint_, avoidance::nextYaw(position_, goal_), yaw_speed_setpoint_);
-  ROS_INFO("\033[1;32m [WGN] goToLand %f %f %f - %f %f %f yaw %f \033[0m\n", goal_.x(), goal_.y(), goal_.z(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;32m [WGN] goToLand %f %f %f - %f %f %f yaw %f \033[0m\n", goal_.x(), goal_.y(), goal_.z(),
            velocity_setpoint_.x(), velocity_setpoint_.y(), velocity_setpoint_.z(),
            avoidance::nextYaw(position_, goal_));
 
@@ -205,10 +210,10 @@ usm::Transition WaypointGenerator::runAltitudeChange() {
   float direction = (fabsf(position_.z() - altitude_landing_area_percentile_) - loiter_height_) < 0.f ? 1.f : -1.f;
   velocity_setpoint_.z() = direction * LAND_SPEED;
   publishTrajectorySetpoints_(goal_, velocity_setpoint_, loiter_yaw_, yaw_speed_setpoint_);
-  ROS_INFO("\033[1;35m [WGN] altitudeChange %f %f %f - %f %f %f yaw %f \033[0m", goal_.x(), goal_.y(), goal_.z(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;35m [WGN] altitudeChange %f %f %f - %f %f %f yaw %f \033[0m", goal_.x(), goal_.y(), goal_.z(),
            velocity_setpoint_.x(), velocity_setpoint_.y(), velocity_setpoint_.z(), yaw_setpoint_);
 
-  ROS_INFO("[WGN] Landing Radius: xy  %f, z %f ", (goal_.topRows<2>() - position_.topRows<2>()).norm(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "[WGN] Landing Radius: xy  %f, z %f ", (goal_.topRows<2>() - position_.topRows<2>()).norm(),
            fabsf(position_.z() - altitude_landing_area_percentile_));
 
   if (inVerticalRange()) {
@@ -225,7 +230,7 @@ usm::Transition WaypointGenerator::runLoiter() {
   }
 
   publishTrajectorySetpoints_(loiter_position_, nan_setpoint, loiter_yaw_, NAN);
-  ROS_INFO("\033[1;34m [WGN] Loiter %f %f %f - nan nan nan yaw %f \033[0m\n", loiter_position_.x(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;34m [WGN] Loiter %f %f %f - nan nan nan yaw %f \033[0m\n", loiter_position_.x(),
            loiter_position_.y(), loiter_position_.z(), loiter_yaw_);
 
   if (abs(grid_slp_seq_ - start_seq_landing_decision_) <= 20) {
@@ -258,15 +263,15 @@ usm::Transition WaypointGenerator::runLand() {
   Eigen::Vector3f vel_sp = nan_setpoint;
   vel_sp.z() = -LAND_SPEED;
   publishTrajectorySetpoints_(loiter_position_, vel_sp, loiter_yaw_, NAN);
-  ROS_INFO("\033[1;36m [WGN] Land %f %f %f - nan nan %f yaw %f \033[0m\n", loiter_position_.x(), loiter_position_.y(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;36m [WGN] Land %f %f %f - nan nan %f yaw %f \033[0m\n", loiter_position_.x(), loiter_position_.y(),
            loiter_position_.z(), vel_sp.z(), loiter_yaw_);
   return usm::Transition::REPEAT;
 }
 
 usm::Transition WaypointGenerator::runEvaluateGrid() {
-  ROS_INFO("\033[1;31m [WGN] runEvaluateGrid \033[0m\n");
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;31m [WGN] runEvaluateGrid \033[0m\n");
   publishTrajectorySetpoints_(loiter_position_, nan_setpoint, loiter_yaw_, NAN);
-  ROS_INFO("\033[1;31m [WGN] runEvaluateGrid %f %f %f - nan nan nan yaw %f \033[0m\n", loiter_position_.x(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;31m [WGN] runEvaluateGrid %f %f %f - nan nan nan yaw %f \033[0m\n", loiter_position_.x(),
            loiter_position_.y(), loiter_position_.z(), loiter_yaw_);
 
   landing_radius_ = 0.5f;
@@ -299,7 +304,7 @@ usm::Transition WaypointGenerator::runEvaluateGrid() {
             position_.z());
 
         velocity_setpoint_.z() = NAN;
-        ROS_INFO("\033[1;31m [WGN] Found landing area in grid at %f %f %f \033[0m", goal_.x(), goal_.y(), goal_.z());
+        RCLCPP_INFO(rclcpp::get_logger("waypoint_generator_slp"), "\033[1;31m [WGN] Found landing area in grid at %f %f %f \033[0m", goal_.x(), goal_.y(), goal_.z());
         return usm::Transition::NEXT2;  // GOTO_LAND
       }
     }

@@ -5,11 +5,11 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
-#include <dynamic_reconfigure/server.h>
-#include <safe_landing_planner/SLPGridMsg.h>
-#include <safe_landing_planner/SafeLandingPlannerNodeConfig.h>
+// #include <dynamic_reconfigure/server.h> // Removed
+#include <safe_landing_planner/msg/slp_grid_msg.hpp> // Updated custom message include
+// #include <safe_landing_planner/SafeLandingPlannerNodeConfig.h> // Removed
 
-#include "grid.hpp"
+#include "grid.hpp" // Assumed ROS-agnostic or already updated
 
 namespace avoidance {
 
@@ -53,9 +53,17 @@ class SafeLandingPlanner {
   Grid getGrid() const { return grid_; };
   int getSmoothingSize() const { return smoothing_size_; };
 
-  safe_landing_planner::SLPGridMsg raw_grid_;
+  safe_landing_planner::msg::SLPGridMsg raw_grid_; // Updated type
 
-  bool play_rosbag_ = false;
+  bool play_rosbag_ = false; // This will be a ROS2 parameter set by the node
+
+  // New method to update parameters
+  void updateSLPParams(
+    float n_points_thr, float std_dev_thr, float grid_size_param, float cell_size_param,
+    float mean_diff_thr, float alpha_param, int n_lines_padding_param,
+    int max_n_mean_diff_cells, int smoothing_size_param, int min_n_land_cells,
+    double new_timeout_critical, double new_timeout_termination, bool new_play_rosbag
+  );
 
  protected:
   Eigen::Vector3f position_ = Eigen::Vector3f::Zero();

@@ -1,22 +1,22 @@
 #ifndef AVOIDANCE_AVOIDANCE_NODE_H
 #define AVOIDANCE_AVOIDANCE_NODE_H
 
-#include "ros/callback_queue.h"
-#include "ros/ros.h"
+#include <rclcpp/rclcpp.hpp> // Replaces ros/ros.h and ros/callback_queue.h
 
-#include <mavros_msgs/Param.h>
-#include <mavros_msgs/ParamGet.h>
-#include <mavros_msgs/WaypointList.h>
-#include "avoidance/common.h"
-#include "mavros_msgs/CompanionProcessStatus.h"
+#include <mavros_msgs/msg/param.hpp>           // Updated include
+#include <mavros_msgs/srv/param_get.hpp>       // Updated include for service
+#include <mavros_msgs/msg/waypoint_list.hpp>   // Updated include
+#include "avoidance/common.h"                   // Already updated common.h
+#include <mavros_msgs/msg/companion_process_status.hpp> // Updated include
 
 #include <thread>
+#include <mutex> // For std::mutex with param_cb_mutex_
 
 namespace avoidance {
 
-class AvoidanceNode {
+class AvoidanceNode : public rclcpp::Node { // Inherit from rclcpp::Node
  public:
-  AvoidanceNode(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
+  explicit AvoidanceNode(const rclcpp::NodeOptions & options); // Updated constructor
   ~AvoidanceNode();
   /**
   * @brief      check healthiness of the avoidance system to trigger failsafe in
@@ -28,7 +28,7 @@ class AvoidanceNode {
   *errors
   * @param[out] hover, true if the vehicle is hovering
   **/
-  void checkFailsafe(ros::Duration since_last_cloud, ros::Duration since_start, bool& hover);
+  void checkFailsafe(rclcpp::Duration since_last_cloud, rclcpp::Duration since_start, bool& hover); // Updated rclcpp::Duration
 
   ModelParameters getPX4Parameters() const;
   float getMissionItemSpeed() const { return mission_item_speed_; }
@@ -40,36 +40,31 @@ class AvoidanceNode {
   void checkPx4Parameters();
 
   void setSystemStatus(MAV_STATE state);
-  void init();
+  void init(); // Implementation will change significantly
 
   /**
   * @brief     callaback with the list of FCU Mission Items
   * @param[in] msg, list of mission items
   **/
-  void missionCallback(const mavros_msgs::WaypointList& msg);
+  void missionCallback(const mavros_msgs::msg::WaypointList::ConstSharedPtr msg); // Updated signature
 
  private:
-  ros::NodeHandle nh_;
-  ros::NodeHandle nh_private_;
+  // Removed nh_ and nh_private_
 
-  ros::Publisher mavros_system_status_pub_;
+  rclcpp::Publisher<mavros_msgs::msg::CompanionProcessStatus>::SharedPtr mavros_system_status_pub_;
+  rclcpp::Subscription<mavros_msgs::msg::Param>::SharedPtr px4_param_sub_;
+  rclcpp::Subscription<mavros_msgs::msg::WaypointList>::SharedPtr mission_sub_;
+  rclcpp::Client<mavros_msgs::srv::ParamGet>::SharedPtr get_px4_param_client_;
 
-  ros::Subscriber px4_param_sub_;
-  ros::Subscriber mission_sub_;
-
-  ros::ServiceClient get_px4_param_client_;
-
-  ros::Timer cmdloop_timer_, statusloop_timer_;
-  ros::CallbackQueue cmdloop_queue_, statusloop_queue_;
-  std::unique_ptr<ros::AsyncSpinner> cmdloop_spinner_;
-  std::unique_ptr<ros::AsyncSpinner> statusloop_spinner_;
+  rclcpp::TimerBase::SharedPtr cmdloop_timer_, statusloop_timer_;
+  // Removed CallbackQueues and AsyncSpinners, use ROS2 executors
 
   MAV_STATE companion_state_ = MAV_STATE::MAV_STATE_STANDBY;
 
   ModelParameters px4_;  // PX4 Firmware paramters
-  std::unique_ptr<std::mutex> param_cb_mutex_;
+  std::unique_ptr<std::mutex> param_cb_mutex_; // Keep as is
 
-  std::thread worker_;
+  std::thread worker_; // Keep as is, though its management might change
 
   double cmdloop_dt_, statusloop_dt_;
   double timeout_termination_;
@@ -81,15 +76,15 @@ class AvoidanceNode {
 
   float mission_item_speed_;
 
-  void cmdLoopCallback(const ros::TimerEvent& event);
-  void statusLoopCallback(const ros::TimerEvent& event);
+  void cmdLoopCallback(); // Updated signature
+  void statusLoopCallback(); // Updated signature
   void publishSystemStatus();
 
   /**
   * @brief     callaback with the list of FCU parameters
   * @param[in] msg, list of paramters
   **/
-  void px4ParamsCallback(const mavros_msgs::Param& msg);
+  void px4ParamsCallback(const mavros_msgs::msg::Param::ConstSharedPtr msg); // Updated signature
 };
 }
 #endif  // AVOIDANCE_AVOIDANCE_NODE_H

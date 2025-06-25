@@ -4,7 +4,9 @@
 #include "local_planner/star_planner.h"
 #include "local_planner/tree_node.h"
 
-#include <sensor_msgs/image_encodings.h>
+// #include <sensor_msgs/image_encodings.h> // Removed
+#include <rclcpp/logging.hpp> // For RCLCPP_DEBUG, RCLCPP_INFO
+#include <rclcpp/clock.hpp>   // For rclcpp::Clock
 
 namespace avoidance {
 
@@ -16,43 +18,59 @@ LocalPlanner::~LocalPlanner() {}
 void LocalPlanner::setState(const Eigen::Vector3f& pos, const Eigen::Vector3f& vel, const Eigen::Quaternionf& q) {
   position_ = pos;
   velocity_ = vel;
-  yaw_fcu_frame_deg_ = getYawFromQuaternion(q);
-  pitch_fcu_frame_deg_ = getPitchFromQuaternion(q);
-  star_planner_->setPose(position_, velocity_);
+  yaw_fcu_frame_deg_ = getYawFromQuaternion(q); // From avoidance::common, uses Eigen::Quaternionf
+  pitch_fcu_frame_deg_ = getPitchFromQuaternion(q); // From avoidance::common, uses Eigen::Quaternionf
+  if (star_planner_) star_planner_->setPose(position_, velocity_);
 }
 
-// set parameters changed by dynamic rconfigure
-void LocalPlanner::dynamicReconfigureSetParams(avoidance::LocalPlannerNodeConfig& config, uint32_t level) {
-  max_sensor_range_ = static_cast<float>(config.max_sensor_range_);
-  cost_params_.pitch_cost_param = config.pitch_cost_param_;
-  cost_params_.yaw_cost_param = config.yaw_cost_param_;
-  cost_params_.velocity_cost_param = config.velocity_cost_param_;
-  cost_params_.obstacle_cost_param = config.obstacle_cost_param_;
-  max_point_age_s_ = static_cast<float>(config.max_point_age_s_);
-  min_num_points_per_cell_ = config.min_num_points_per_cell_;
-  min_sensor_range_ = static_cast<float>(config.min_sensor_range_);
-  timeout_startup_ = config.timeout_startup_;
-  timeout_critical_ = config.timeout_critical_;
-  timeout_termination_ = config.timeout_termination_;
-  children_per_node_ = config.children_per_node_;
-  n_expanded_nodes_ = config.n_expanded_nodes_;
-  smoothing_margin_degrees_ = static_cast<float>(config.smoothing_margin_degrees_);
+// Removed dynamicReconfigureSetParams method.
+// Implement the new updateAlgorithmParams method.
+void LocalPlanner::updateAlgorithmParams(
+    int new_children_per_node, int new_n_expanded_nodes,
+    float new_min_sensor_range, float new_max_sensor_range,
+    float new_smoothing_margin_degrees, float new_max_point_age_s,
+    float new_speed, // This was 'speed_' member, should match LocalPlannerNodeConfig if it was there
+    const costParameters& new_cost_params) {
 
-  if (getGoal().z() != config.goal_z_param) {
-    auto goal = getGoal();
-    goal.z() = config.goal_z_param;
-    setGoal(goal);
-  }
+  // These were members of LocalPlanner set by LocalPlannerNodeConfig
+  // children_per_node_ and n_expanded_nodes_ were passed to star_planner
+  // min_sensor_range_, max_sensor_range_, smoothing_margin_degrees_, max_point_age_s_ are direct members
 
-  star_planner_->dynamicReconfigureSetStarParams(config, level);
+  min_sensor_range_ = new_min_sensor_range;
+  max_sensor_range_ = new_max_sensor_range;
+  smoothing_margin_degrees_ = new_smoothing_margin_degrees;
+  max_point_age_s_ = new_max_point_age_s;
+  speed_ = new_speed; // Assuming speed_ is a member of LocalPlanner that was updated by a dynparam
+  cost_params_ = new_cost_params; // This is already handled by setParams, but can be part of this too.
 
-  ROS_DEBUG("\033[0;35m[OA] Dynamic reconfigure call \033[0m");
+  // Parameters that were passed to star_planner in its dynamicReconfigureSetStarParams
+  // Now LocalPlannerNodelet should call star_planner_->updateStarPlannerParams directly
+  // with values it gets from its own ROS2 parameters.
+  // Or, if these are to be managed by LocalPlanner and passed to StarPlanner,
+  // LocalPlanner needs to store them.
+  // For example, if tree_node_distance and tree_heuristic_weight were from LocalPlannerNodeConfig:
+  // this->tree_node_distance_ = config_tree_node_distance; // new member in LocalPlanner
+  // if (star_planner_) {
+  //   star_planner_->updateStarPlannerParams(
+  //       new_children_per_node, new_n_expanded_nodes,
+  //       this->tree_node_distance_, /* value for max_path_length, likely max_sensor_range_ */ new_max_sensor_range,
+  //       new_smoothing_margin_degrees, /* value for heuristic_weight */ this->tree_heuristic_weight_,
+  //       new_max_sensor_range, new_min_sensor_range);
+  // }
+  // For now, only updating direct members of LocalPlanner. StarPlanner updates should be handled by LocalPlannerNodelet.
+  // The direct members 'children_per_node_' and 'n_expanded_nodes_' of LocalPlanner are updated here.
+  children_per_node_ = new_children_per_node;
+  n_expanded_nodes_ = new_n_expanded_nodes;
+
+
+  RCLCPP_DEBUG(rclcpp::get_logger("local_planner_lib"), "LocalPlanner algorithm params updated.");
 }
+
 
 void LocalPlanner::setGoal(const Eigen::Vector3f& goal) {
   goal_ = goal;
 
-  ROS_INFO("===== Set Goal ======: [%f, %f, %f].", goal_.x(), goal_.y(), goal_.z());
+  RCLCPP_INFO(rclcpp::get_logger("local_planner_lib"), "===== Set Goal ======: [%f, %f, %f].", goal_.x(), goal_.y(), goal_.z());
   applyGoal();
 }
 void LocalPlanner::setPreviousGoal(const Eigen::Vector3f& prev_goal) { prev_goal_ = prev_goal; }
@@ -70,14 +88,15 @@ Eigen::Vector3f LocalPlanner::getGoal() const { return goal_; }
 void LocalPlanner::applyGoal() { star_planner_->setGoal(goal_); }
 
 void LocalPlanner::runPlanner() {
-  ROS_INFO("\033[1;35m[OA] Planning started, using %i cameras\n \033[0m",
+  RCLCPP_INFO(rclcpp::get_logger("local_planner_lib"), "\033[1;35m[OA] Planning started, using %i cameras\n \033[0m",
            static_cast<int>(original_cloud_vector_.size()));
 
-  float elapsed_since_last_processing = static_cast<float>((ros::Time::now() - last_pointcloud_process_time_).toSec());
+  rclcpp::Clock sys_clock(RCL_ROS_TIME);
+  float elapsed_since_last_processing = static_cast<float>((sys_clock.now() - last_pointcloud_process_time_).seconds());
   processPointcloud(final_cloud_, original_cloud_vector_, fov_fcu_frame_, yaw_fcu_frame_deg_, pitch_fcu_frame_deg_,
                     position_, min_sensor_range_, max_sensor_range_, max_point_age_s_, elapsed_since_last_processing,
                     min_num_points_per_cell_);
-  last_pointcloud_process_time_ = ros::Time::now();
+  last_pointcloud_process_time_ = sys_clock.now();
 
   determineStrategy();
 }
@@ -143,17 +162,17 @@ void LocalPlanner::determineStrategy() {
 
     // build search tree
     star_planner_->buildLookAheadTree();
-    last_path_time_ = ros::Time::now();
+    last_path_time_ = rclcpp::Clock(RCL_ROS_TIME).now();
   }
 }
 
 void LocalPlanner::updateObstacleDistanceMsg(Histogram hist) {
-  sensor_msgs::LaserScan msg = {};
-  msg.header.stamp = ros::Time::now();
-  msg.header.frame_id = "local_origin";
+  sensor_msgs::msg::LaserScan msg = {}; // Updated type
+  msg.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
+  msg.header.frame_id = "local_origin"; // Should use this->frame_id_ or a common frame
   msg.angle_increment = static_cast<double>(ALPHA_RES) * M_PI / 180.0;
-  msg.range_min = min_sensor_range_;
-  msg.range_max = max_sensor_range_;
+  msg.range_min = min_sensor_range_; // class member
+  msg.range_max = max_sensor_range_; // class member
   msg.ranges.reserve(GRID_LENGTH_Z);
 
   for (int i = 0; i < GRID_LENGTH_Z; ++i) {
@@ -169,13 +188,13 @@ void LocalPlanner::updateObstacleDistanceMsg(Histogram hist) {
     }
   }
 
-  distance_data_ = msg;
+  distance_data_ = msg; // distance_data_ is sensor_msgs::msg::LaserScan
 }
 
 void LocalPlanner::updateObstacleDistanceMsg() {
-  sensor_msgs::LaserScan msg = {};
-  msg.header.stamp = ros::Time::now();
-  msg.header.frame_id = "local_origin";
+  sensor_msgs::msg::LaserScan msg = {}; // Updated type
+  msg.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
+  msg.header.frame_id = "local_origin"; // Should use this->frame_id_ or a common frame
   msg.angle_increment = static_cast<double>(ALPHA_RES) * M_PI / 180.0;
   msg.range_min = min_sensor_range_;
   msg.range_max = max_sensor_range_;

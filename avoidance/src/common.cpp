@@ -1,5 +1,11 @@
 #include "avoidance/common.h"
 
+#include <rclcpp/clock.hpp> // For rclcpp::Clock().now()
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp> // For tf2::getYaw
+// Note: common.h already includes <rclcpp/clock.hpp> and message types.
+// tf2_geometry_msgs.hpp might need to be added to common.h if tf2::getYaw is used there,
+// but for now, adding it here as it's directly used in this .cpp file.
+
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -278,9 +284,9 @@ double getAngularVelocity(float desired_yaw, float curr_yaw) {
   return 0.5 * static_cast<double>(vel);
 }
 
-void transformToTrajectory(mavros_msgs::Trajectory& obst_avoid, geometry_msgs::PoseStamped pose,
-                           geometry_msgs::Twist vel) {
-  obst_avoid.header.stamp = ros::Time::now();
+void transformToTrajectory(mavros_msgs::msg::Trajectory& obst_avoid, geometry_msgs::msg::PoseStamped pose,
+                           geometry_msgs::msg/Twist vel) { // Types already updated in common.h, just ensure consistency
+  obst_avoid.header.stamp = rclcpp::Clock().now(); // Changed from ros::Time::now()
   obst_avoid.type = 0;  // MAV_TRAJECTORY_REPRESENTATION::WAYPOINTS
   obst_avoid.point_1.position.x = pose.pose.position.x;
   obst_avoid.point_1.position.y = pose.pose.position.y;
@@ -291,7 +297,7 @@ void transformToTrajectory(mavros_msgs::Trajectory& obst_avoid, geometry_msgs::P
   obst_avoid.point_1.acceleration_or_force.x = NAN;
   obst_avoid.point_1.acceleration_or_force.y = NAN;
   obst_avoid.point_1.acceleration_or_force.z = NAN;
-  obst_avoid.point_1.yaw = tf::getYaw(pose.pose.orientation);
+  obst_avoid.point_1.yaw = tf2::getYaw(pose.pose.orientation); // Changed from tf::getYaw
   obst_avoid.point_1.yaw_rate = -vel.angular.z;
 
   fillUnusedTrajectoryPoint(obst_avoid.point_2);
@@ -304,9 +310,9 @@ void transformToTrajectory(mavros_msgs::Trajectory& obst_avoid, geometry_msgs::P
   obst_avoid.point_valid = {true, false, false, false, false};
 }
 
-void transformToBezier(mavros_msgs::Trajectory& obst_avoid, const std::array<Eigen::Vector4d, 5>& control_points,
-                       double duration) {
-  obst_avoid.header.stamp = ros::Time::now();
+void transformToBezier(mavros_msgs::msg::Trajectory& obst_avoid, const std::array<Eigen::Vector4d, 5>& control_points,
+                       double duration) { // Type already updated in common.h
+  obst_avoid.header.stamp = rclcpp::Clock().now(); // Changed from ros::Time::now()
   obst_avoid.type = 1;  // MAV_TRAJECTORY_REPRESENTATION::BEZIER
   fillControlPoint(obst_avoid.point_1, control_points[0]);
   fillControlPoint(obst_avoid.point_2, control_points[1]);

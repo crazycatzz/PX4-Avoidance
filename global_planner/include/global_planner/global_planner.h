@@ -10,15 +10,18 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include <dynamic_reconfigure/server.h>
-#include <nav_msgs/Path.h>
-#include <tf/transform_listener.h>  // getYaw createQuaternionMsgFromYaw
+// #include <dynamic_reconfigure/server.h> // Removed
+#include <nav_msgs/msg/path.hpp> // Updated
+// #include <tf/transform_listener.h> // Removed, TF utilities will use tf2 headers if needed (e.g. in common_ros.h)
+#include <geometry_msgs/msg/point.hpp>      // For curr_pos_
+#include <geometry_msgs/msg/vector3.hpp>    // For curr_vel_
+#include <geometry_msgs/msg/pose_stamped.hpp> // For method signatures
 
 #include <octomap/OcTree.h>
 #include <octomap/octomap.h>
 
-#include <global_planner/GlobalPlannerNodeConfig.h>
-#include <global_planner/PathWithRiskMsg.h>
+// #include <global_planner/GlobalPlannerNodeConfig.h> // Removed (dynamic_reconfigure specific)
+#include <global_planner/msg/path_with_risk_msg.hpp> // Updated custom message include
 #include "global_planner/analysis.h"
 #include "global_planner/cell.h"
 #include "global_planner/common.h"
@@ -58,9 +61,9 @@ class GlobalPlanner {
 
   // TODO: rename and remove not needed
   std::vector<Cell> path_back_;
-  geometry_msgs::Point curr_pos_;
+  geometry_msgs::msg::Point curr_pos_; // Updated type
   double curr_yaw_;
-  geometry_msgs::Vector3 curr_vel_;
+  geometry_msgs::msg::Vector3 curr_vel_; // Updated type
   GoalCell goal_pos_ = GoalCell(0.5, 0.5, 3.5);
   bool going_back_ = true;  // we start by just finding the start position
 
@@ -103,7 +106,7 @@ class GlobalPlanner {
 
   void calculateAccumulatedHeightPrior();
 
-  void setPose(const geometry_msgs::PoseStamped& new_pose);
+  void setPose(const geometry_msgs::msg::PoseStamped& new_pose); // Updated type
   void setGoal(const GoalCell& goal);
   void setPath(const std::vector<Cell>& path);
   void setFrame(std::string frame_id);
@@ -120,7 +123,7 @@ class GlobalPlanner {
   bool isLegal(const Node& node);
   double getRisk(const Cell& cell);
   double getRisk(const Node& node);
-  double getRiskOfCurve(const std::vector<geometry_msgs::PoseStamped>& msg);
+  double getRiskOfCurve(const std::vector<geometry_msgs::msg::PoseStamped>& msg); // Updated type
   double getTurnSmoothness(const Node& u, const Node& v);
   double getEdgeCost(const Node& u, const Node& v);
 
@@ -130,10 +133,10 @@ class GlobalPlanner {
   double altitudeHeuristic(const Cell& u, const Cell& goal);
   double getHeuristic(const Node& u, const Cell& goal);
 
-  geometry_msgs::PoseStamped createPoseMsg(const Cell& cell, double yaw);
-  nav_msgs::Path getPathMsg();
-  nav_msgs::Path getPathMsg(const std::vector<Cell>& path);
-  PathWithRiskMsg getPathWithRiskMsg();
+  geometry_msgs::msg::PoseStamped createPoseMsg(const Cell& cell, double yaw); // Updated return type
+  nav_msgs::msg::Path getPathMsg(); // Updated return type
+  nav_msgs::msg::Path getPathMsg(const std::vector<Cell>& path); // Updated return type
+  global_planner::msg::PathWithRiskMsg getPathWithRiskMsg(); // Updated return type
   PathInfo getPathInfo(const std::vector<Cell>& path);
 
   NodePtr getStartNode(const Cell& start, const Cell& parent, const std::string& type);

@@ -3,6 +3,8 @@
 
 #include "global_planner/cell.h"
 #include "global_planner/node.h"
+#include <rclcpp/logging.hpp> // For RCLCPP_INFO etc.
+#include <octomap/octomap.h> // For octomap::OcTreeNode, octomap::probability if used by these funcs
 
 // This file consists mostly of ugly debug functions which contain no logic
 
@@ -92,7 +94,7 @@ void printPathStats(GlobalPlanner* global_planner, const std::vector<Cell>& path
       double num_45_deg_turns = std::ceil(ang_diff3 / (M_PI / 4));  // Minimum number of 45-turns to goal
       printf("\t|| \t%3.2f \t%3.2f \t%3.2f \t%3.2f \t%3.2f \t%3.2f \n", u_ang, goal_ang, ang_diff, ang_diff2, ang_diff3,
              num_45_deg_turns);
-      ROS_INFO("WTF? \n %f %f \n\n\n\n\n\n\n\n\n\n\n\n", angleToRange(5.5), angleToRange(-5.5));
+      RCLCPP_INFO(rclcpp::get_logger("global_planner_analysis"), "WTF? \n %f %f \n\n\n\n\n\n\n\n\n\n\n\n", angleToRange(5.5), angleToRange(-5.5));
     }
   }
   printf("\n\n");
@@ -101,33 +103,34 @@ void printPathStats(GlobalPlanner* global_planner, const std::vector<Cell>& path
 // Print information about a point, mostly the risk of the containing Cell
 template <typename GlobalPlanner>
 void printPointStats(GlobalPlanner* global_planner, double x, double y, double z) {
+  auto logger = rclcpp::get_logger("global_planner_analysis");
   Cell cell(x, y, z);
-  ROS_INFO("\n\nDEBUG INFO FOR %s", cell.asString().c_str());
-  ROS_INFO("Rist cost: %2.2f", global_planner->risk_factor_ * global_planner->getRisk(cell));
-  ROS_INFO("getRisk: %2.2f", global_planner->getRisk(cell));
-  ROS_INFO("singleCellRisk: %2.2f", global_planner->getSingleCellRisk(cell));
-  ROS_INFO(
-      "Neighbors:\n \t %2.2f \t \t \t %2.2f \n %2.2f \t \t %2.2f \n \t %2.2f "
+  RCLCPP_INFO(logger, "\n\nDEBUG INFO FOR %s", cell.asString().c_str());
+  RCLCPP_INFO(logger, "Rist cost: %2.2f", global_planner->risk_factor_ * global_planner->getRisk(cell));
+  RCLCPP_INFO(logger, "getRisk: %2.2f", global_planner->getRisk(cell));
+  RCLCPP_INFO(logger, "singleCellRisk: %2.2f", global_planner->getSingleCellRisk(cell));
+  RCLCPP_INFO(
+      logger, "Neighbors:\n \t %2.2f \t \t \t %2.2f \n %2.2f \t \t %2.2f \n \t %2.2f "
       "\t \t \t %2.2f",
       global_planner->getSingleCellRisk(Cell(x, y + 1, z)), global_planner->getSingleCellRisk(Cell(x, y, z + 1)),
       global_planner->getSingleCellRisk(Cell(x - 1, y, z)), global_planner->getSingleCellRisk(Cell(x + 1, y, z)),
       global_planner->getSingleCellRisk(Cell(x, y - 1, z)), global_planner->getSingleCellRisk(Cell(x, y, z - 1)));
 
   double heuristics = global_planner->getHeuristic(Node(cell, cell), global_planner->goal_pos_);
-  ROS_INFO("Heuristics: %2.2f", heuristics);
+  RCLCPP_INFO(logger, "Heuristics: %2.2f", heuristics);
 
   octomap::OcTreeNode* node = global_planner->octree_->search(x, y, z);
   if (node) {
-    double prob = octomap::probability(node->getValue());
-    double post_prob = posterior(global_planner->getAltPrior(cell), prob);
-    ROS_INFO("prob: %2.2f \t post_prob: %2.2f", prob, post_prob);
-    if (global_planner->occupied_.find(cell) != global_planner->occupied_.end()) {
-      ROS_INFO("Cell in occupied, posterior: %2.2f", post_prob);
+    double prob = octomap::probability(node->getValue()); // This function is from octomap
+    double post_prob = posterior(global_planner->getAltPrior(cell), prob); // posterior is from common.h
+    RCLCPP_INFO(logger, "prob: %2.2f \t post_prob: %2.2f", prob, post_prob);
+    if (global_planner->occupied_.count(cell)) { // Use .count() for unordered_set/map
+      RCLCPP_INFO(logger, "Cell in occupied, posterior: %2.2f", post_prob);
     } else {
-      ROS_INFO("Cell NOT in occupied, posterior: %2.2f", global_planner->explore_penalty_ * post_prob);
+      RCLCPP_INFO(logger, "Cell NOT in occupied, posterior: %2.2f", global_planner->explore_penalty_ * post_prob);
     }
   } else {
-    ROS_INFO("Cell not in tree, prob: %2.2f", global_planner->explore_penalty_ * global_planner->getAltPrior(cell));
+    RCLCPP_INFO(logger, "Cell not in tree, prob: %2.2f", global_planner->explore_penalty_ * global_planner->getAltPrior(cell));
   }
 }
 

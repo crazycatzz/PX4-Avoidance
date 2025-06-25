@@ -2,6 +2,20 @@
 #define GLOBAL_PLANNER_SEARCH_TOOLS_H_
 
 #include <string>
+#include <vector> // For std::vector used in priority_queue etc.
+#include <queue>  // For std::priority_queue
+#include <map>    // For std::map
+#include <unordered_map> // For std::unordered_map
+#include <unordered_set> // For std::unordered_set
+#include <algorithm> // For std::reverse
+#include <cmath> // For INFINITY, std::max, std::floor, std::abs, fmod
+#include <iomanip> // For std::setw, std::setprecision, std::left
+#include <iostream> // For std::cout
+#include <ctime> // For std::clock_t, std::clock
+
+#include <nav_msgs/msg/path.hpp> // Updated include
+#include <geometry_msgs/msg/point.hpp> // Updated include
+#include <geometry_msgs/msg/pose_stamped.hpp> // Updated include
 
 #include "global_planner/bezier.h"
 #include "global_planner/cell.h"
@@ -37,27 +51,27 @@ inline void printSearchInfo(SearchInfo info, std::string node_type = "Node", dou
 }
 
 // Returns a path where corners are smoothed with quadratic Bezier-curves
-inline nav_msgs::Path smoothPath(const nav_msgs::Path& path) {
+inline nav_msgs::msg::Path smoothPath(const nav_msgs::msg::Path& path) { // Updated signature
   if (path.poses.size() < 3) {
     return path;
   }
 
-  nav_msgs::Path smooth_path;
+  nav_msgs::msg::Path smooth_path; // Updated type
   smooth_path.header = path.header;
 
   // Repeat the first and last points to get the first half of the first edge
   // and the second half of the last edge
   smooth_path.poses.push_back((path.poses.front()));
-  for (int i = 2; i < path.poses.size(); i++) {
-    geometry_msgs::Point p0 = path.poses[i - 2].pose.position;
-    geometry_msgs::Point p1 = path.poses[i - 1].pose.position;
-    geometry_msgs::Point p2 = path.poses[i].pose.position;
+  for (size_t i = 2; i < path.poses.size(); i++) { // Use size_t for loop variable with .size()
+    geometry_msgs::msg::Point p0 = path.poses[i - 2].pose.position; // Updated type
+    geometry_msgs::msg::Point p1 = path.poses[i - 1].pose.position; // Updated type
+    geometry_msgs::msg::Point p2 = path.poses[i].pose.position;     // Updated type
     p0 = middlePoint(p0, p1);
     p2 = middlePoint(p1, p2);
 
-    std::vector<geometry_msgs::Point> smooth_turn = threePointBezier(p0, p1, p2);
+    std::vector<geometry_msgs::msg::Point> smooth_turn = threePointBezier(p0, p1, p2); // Updated type
     for (const auto& point : smooth_turn) {
-      geometry_msgs::PoseStamped pose_msg = path.poses.front();  // Copy the original header info
+      geometry_msgs::msg::PoseStamped pose_msg = path.poses.front();  // Copy the original header info, updated type
       pose_msg.pose.position = point;
       smooth_path.poses.push_back(pose_msg);
     }

@@ -2,6 +2,12 @@
 #define GLOBAL_PLANNER_BEZIER_H_
 
 #include <math.h>  // sqrt
+#include <vector>  // For std::vector
+#include <algorithm> // For std::min if used by called functions like distance or middlePoint
+
+#include <nav_msgs/msg/path.hpp> // Updated include
+#include <geometry_msgs/msg/point.hpp> // Updated include
+#include "global_planner/common.h" // For distance, middlePoint, interpolate
 
 // This file consists functions for functions for Bezier curves
 
@@ -35,20 +41,31 @@ std::vector<P> threePointBezier(const P& p0, const P& p1, const P& p2, int num_s
 }
 
 // Returns a quadratic Bezier-curve starting in p0 and and ending in p2
-template <typename Path>
-nav_msgs::Path threePointBezier(const Path& path, int num_steps = 10) {
+template <typename PathMessagePtrOrRef> // Generic enough for both Path and Path::SharedPtr etc.
+nav_msgs::msg::Path threePointBezier(const PathMessagePtrOrRef& path_input, int num_steps = 10) {
+  // Assuming path_input has a 'poses' member like nav_msgs::msg::Path
+  // If it's a pointer (like ConstSharedPtr), dereference it.
+  // For simplicity, let's assume it's a const nav_msgs::msg::Path& for now.
+  // If it can be a shared_ptr, the calling code or this function needs to handle dereferencing.
+  // For this specific call from search_tools.h, it's a nav_msgs::msg::Path.
+  const nav_msgs::msg::Path& path = path_input; // If PathMessagePtrOrRef is nav_msgs::msg::Path&
+
   if (path.poses.size() != 3) {
-    printf("Path size error, %d != 3 \n", static_cast<int>(path.poses.size()));
-    return path;
+    // Consider using RCLCPP_ERROR or similar if a logger is available, or throw exception
+    printf("Path size error for threePointBezier, %zu != 3 \n", path.poses.size());
+    return path; // Return original path on error
   }
-  auto new_path = path;
-  auto new_points = threePointBezier(new_path.poses[0].pose.position, new_path.poses[1].pose.position,
+  nav_msgs::msg::Path new_path = path; // Copy header and other path properties
+  auto new_points = threePointBezier(new_path.poses[0].pose.position,
+                                     new_path.poses[1].pose.position,
                                      new_path.poses[2].pose.position, num_steps);
-  new_path.poses.clear();
-  for (auto point : new_points) {
-    auto new_pose = path.poses[0];
-    new_pose.pose.position = point;
-    new_path.poses.push_back(new_pose);
+  new_path.poses.clear(); // Clear existing poses to fill with smoothed ones
+  for (const auto& point : new_points) {
+    // Create a new PoseStamped, copying relevant info from an original pose if needed (e.g., orientation)
+    // Here, assuming orientation is not changed by smoothing, take from first original pose.
+    geometry_msgs::msg::PoseStamped new_pose_stamped = path.poses[0];
+    new_pose_stamped.pose.position = point;
+    new_path.poses.push_back(new_pose_stamped);
   }
   return new_path;
 }
@@ -119,28 +136,52 @@ double getAccelerationMagnitude(const P& p0, const P& p1, const P& p2, double du
 }
 
 template <typename BezierMsg>
-nav_msgs::Path pathToTriplets(const nav_msgs::Path& path, std::vector<BezierMsg> triplets, std::vector<double> speed) {
+nav_msgs::msg::Path pathToTriplets(const nav_msgs::msg::Path& path, std::vector<BezierMsg>& triplets, const std::vector<double>& speed) {
+  // Note: The original function took `triplets` by value and `speed` by const ref, but didn't seem to use `speed` or return `triplets` effectively.
+  // Assuming `triplets` is an out-parameter. And `speed` might be used by `fillBezierMsg` or logic not shown.
+  // For now, just porting types and structure.
   if (path.poses.size() < 3) {
     return path;
   }
 
+  nav_msgs::msg::Path result_path = path; // Copy header etc.
+  result_path.poses.clear(); // We will fill this if needed, or maybe this func just populates triplets.
+                             // The original didn't populate a return path based on triplets.
+                             // Let's assume it populates the `triplets` vector.
+
   // Extract the points from path, duplicate the first and last point to
   // indicate acceleration at the beginning and deceleration at the end
-  std::vector<geometry_msgs::Point> points;
-  points.push_back(path.poses.front().pose.position);
-  for (auto pose : path.poses) {
-    points.push_back(pose.pose.position);
+  std::vector<geometry_msgs::msg::Point> points;
+  if (!path.poses.empty()) { // Guard against empty path
+    points.push_back(path.poses.front().pose.position);
+    for (const auto& pose_stamped : path.poses) {
+      points.push_back(pose_stamped.pose.position);
+    }
+    points.push_back(path.poses.back().pose.position);
+  } else {
+    return path; // Return original empty or invalid path
   }
-  points.push_back(path.poses.back().pose.position);
 
-  for (int i = 1; i < path.poses.size(); i++) {
-    geometry_msgs::Point prev = middlePoint(points[i - 1], points[i]);
-    geometry_msgs::Point ctrl = points[i];
-    geometry_msgs::Point next = middlePoint(points[i], points[i + 1]);
-    ;
+
+  triplets.clear(); // Clear out-parameter
+  // Original loop condition `i < path.poses.size()` might be off by one due to `points` vector modification.
+  // If `points` has N+2 elements (original N poses + duplicated front/back), then path.poses.size() is N.
+  // Loop should go up to points[i+1] which means i+1 < points.size(), so i < points.size()-1
+  for (size_t i = 1; i < points.size() - 1; i++) { // Iterate through the 'actual' poses in the augmented list
+    geometry_msgs::msg::Point prev = middlePoint(points[i - 1], points[i]);
+    geometry_msgs::msg::Point ctrl = points[i];
+    geometry_msgs::msg::Point next = middlePoint(points[i], points[i + 1]);
+
     BezierMsg msg;
+    // Assuming fillBezierMsg takes geometry_msgs::msg::Point or compatible types for prev, ctrl, next
+    // The duration 1.0 is a placeholder from original. Speed might influence this.
     fillBezierMsg(msg, prev, ctrl, next, 1.0);
+    triplets.push_back(msg);
   }
+  // This function originally returned `path`, not a path made of triplets.
+  // If the goal is to return a path visualization of these triplets, that logic is missing.
+  // For now, returning the original path as per original, despite generating triplets.
+  return path;
 }
 
 }  // namespace global_planner

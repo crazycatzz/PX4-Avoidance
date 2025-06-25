@@ -9,10 +9,9 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
-#include <nav_msgs/GridCells.h>
-
-#include <dynamic_reconfigure/server.h>
-#include <local_planner/LocalPlannerNodeConfig.h>
+// #include <nav_msgs/GridCells.h> // Removed, not used in this header's public API
+// #include <dynamic_reconfigure/server.h> // Removed
+// #include <local_planner/LocalPlannerNodeConfig.h> // Removed
 
 #include <vector>
 
@@ -59,6 +58,14 @@ class StarPlanner {
   **/
   void setParams(costParameters cost_params);
 
+  // Add a new method to update planner-specific parameters that were previously set by dynamic_reconfigure
+  // This method would be called by LocalPlannerNodelet when its ROS2 parameters change.
+  // The structure of these parameters can be defined in a new struct if needed.
+  void updateStarPlannerParams(int children_per_node, int n_expanded_nodes, float tree_node_distance,
+                               float max_path_length, float smoothing_margin_deg, float heuristic_weight,
+                               float max_sensor_dist, float min_sensor_dist);
+
+
   /**
   * @brief     setter method for star_planner pointcloud
   * @param[in] cloud, processed data already cropped and combined with history
@@ -88,10 +95,7 @@ class StarPlanner {
   **/
   void buildLookAheadTree();
 
-  /**
-  * @brief     setter method for server paramters
-  **/
-  void dynamicReconfigureSetStarParams(const avoidance::LocalPlannerNodeConfig& config, uint32_t level);
+  // Removed dynamicReconfigureSetStarParams method
 };
 }
 #endif  // STAR_PLANNER_H

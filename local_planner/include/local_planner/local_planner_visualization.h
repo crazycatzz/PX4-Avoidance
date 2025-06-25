@@ -2,14 +2,22 @@
 #define LOCAL_PLANNER_VISUALIZATION_H
 
 #include "local_planner/local_planner.h"
-#include "local_planner/waypoint_generator.h"
+#include "local_planner/waypoint_generator.h" // WaypointGenerator uses rclcpp::Time
 
 #include <pcl/point_cloud.h>
-#include <pcl_ros/point_cloud.h>
-#include <ros/ros.h>
-#include <std_msgs/UInt32.h>
+// #include <pcl_ros/point_cloud.h> // Removed, use sensor_msgs::msg::PointCloud2 and pcl_conversions if needed
+#include <rclcpp/rclcpp.hpp> // For rclcpp::Node::SharedPtr and publisher/subscriber types
+#include <std_msgs/msg/u_int32.hpp> // Updated include
+#include <visualization_msgs/msg/marker.hpp>        // For visualization
+#include <visualization_msgs/msg/marker_array.hpp>  // For visualization
+#include <nav_msgs/msg/path.hpp>                    // For path visualization
+#include <geometry_msgs/msg/point.hpp>              // For goal visualization
+#include <geometry_msgs/msg/twist.hpp>              // For setpoint visualization
+#include <sensor_msgs/msg/laser_scan.hpp>           // For range scan visualization
+
 #include <Eigen/Dense>
 #include <vector>
+#include <string> // For frame_id in createMarker
 
 namespace avoidance {
 
@@ -18,7 +26,7 @@ class LocalPlannerVisualization {
   /**
   * @brief      initializes all publishers used for local planner visualization
   **/
-  void initializePublishers(ros::NodeHandle& nh);
+  void initializePublishers(rclcpp::Node::SharedPtr node); // Changed to take rclcpp::Node::SharedPtr
 
   /**
   * @brief       Main function which calls functions to visualize all planner
@@ -47,7 +55,7 @@ class LocalPlannerVisualization {
   * @brief       Visualization of the goal position
   * @params[in]  goal, the loaction of the goal used in the planner calculations
   **/
-  void publishGoal(const geometry_msgs::Point& goal) const;
+  void publishGoal(const geometry_msgs::msg::Point& goal) const; // Updated type
 
   /**
   * @brief       Visualization of the 2D compression of the local pointcloud
@@ -99,7 +107,7 @@ class LocalPlannerVisualization {
   *              visualization
   * @params[in]  newest_pos, location of the drone at the current timestep
   **/
-  void publishCurrentSetpoint(const geometry_msgs::Twist& wp, const PlannerState& waypoint_type,
+  void publishCurrentSetpoint(const geometry_msgs::msg::Twist& wp, const PlannerState& waypoint_type, // Updated type
                               const Eigen::Vector3f& newest_position) const;
 
   /**
@@ -109,35 +117,37 @@ class LocalPlannerVisualization {
   * @params[in]  deg60_pt, 60 degrees angle entry point to line previous to
   * current goal from current vehicle postion
   **/
-  void publishOfftrackPoints(Eigen::Vector3f& closest_pt, Eigen::Vector3f& deg60_pt);
+   void publishOfftrackPoints(Eigen::Vector3f& closest_pt, Eigen::Vector3f& deg60_pt); // No ROS types
 
-  void publishFOV(const std::vector<FOV>& fov, float max_range) const;
+  void publishFOV(const std::vector<FOV>& fov, float max_range) const; // No ROS types directly, FOV from common.h
 
-  void publishRangeScan(const sensor_msgs::LaserScan& scan, const Eigen::Vector3f& newest_position) const;
+  void publishRangeScan(const sensor_msgs::msg::LaserScan& scan, const Eigen::Vector3f& newest_position) const; // Updated type
 
  private:
-  ros::Publisher local_pointcloud_pub_;
-  ros::Publisher pointcloud_size_pub_;
-  ros::Publisher bounding_box_pub_;
-  ros::Publisher ground_measurement_pub_;
-  ros::Publisher original_wp_pub_;
-  ros::Publisher adapted_wp_pub_;
-  ros::Publisher smoothed_wp_pub_;
-  ros::Publisher complete_tree_pub_;
-  ros::Publisher tree_path_pub_;
-  ros::Publisher marker_goal_pub_;
-  ros::Publisher path_actual_pub_;
-  ros::Publisher path_waypoint_pub_;
-  ros::Publisher path_adapted_waypoint_pub_;
-  ros::Publisher current_waypoint_pub_;
-  ros::Publisher histogram_image_pub_;
-  ros::Publisher cost_image_pub_;
-  ros::Publisher closest_point_pub_;
-  ros::Publisher deg60_point_pub_;
-  ros::Publisher fov_pub_;
-  ros::Publisher range_scan_pub_;
+  // Publishers updated to ROS2 types
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr local_pointcloud_pub_; // Assuming PointCloud2
+  rclcpp::Publisher<std_msgs::msg::UInt32>::SharedPtr pointcloud_size_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr bounding_box_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr ground_measurement_pub_; // Assuming Marker
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr original_wp_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr adapted_wp_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr smoothed_wp_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr complete_tree_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr tree_path_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_goal_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_actual_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_waypoint_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_adapted_waypoint_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr current_waypoint_pub_; // Assuming Marker for setpoint viz
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr histogram_image_pub_; // Assuming Image for histogram viz
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr cost_image_pub_;      // Assuming Image for cost viz
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr closest_point_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr deg60_point_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr fov_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr range_scan_pub_;
 
   int path_length_ = 0;
+  rclcpp::Node::SharedPtr node_ptr_; // Store the node pointer if needed for other things, or just use in initializePublishers
 };
 }
 #endif  // LOCAL_PLANNER_VISUALIZATION_H

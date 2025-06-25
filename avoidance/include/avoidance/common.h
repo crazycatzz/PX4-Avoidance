@@ -8,12 +8,13 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 
-#include <geometry_msgs/Point.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <geometry_msgs/Twist.h>
-#include <geometry_msgs/Vector3Stamped.h>
-#include <mavros_msgs/Trajectory.h>
-#include <tf/transform_listener.h>
+#include <geometry_msgs/msg/point.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/vector3_stamped.hpp>
+#include <mavros_msgs/msg/trajectory.hpp>
+#include <tf2_ros/buffer.h> // Changed from tf/transform_listener.h
+#include <rclcpp/clock.hpp> // For rclcpp::Clock().now()
 #include <mutex>
 
 namespace avoidance {
@@ -467,7 +468,7 @@ inline geometry_msgs::Twist toTwist(const Eigen::Vector3f& l, const Eigen::Vecto
 
 inline geometry_msgs::PoseStamped toPoseStamped(const Eigen::Vector3f& ev3, const Eigen::Quaternionf& eq) {
   geometry_msgs::PoseStamped gmps;
-  gmps.header.stamp = ros::Time::now();
+  gmps.header.stamp = rclcpp::Clock().now(); // Changed from ros::Time::now()
   gmps.header.frame_id = "local_origin";
   gmps.pose.position = toPoint(ev3);
   gmps.pose.orientation = toQuaternion(eq);

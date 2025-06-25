@@ -1,97 +1,98 @@
 #pragma once
-#include <ros/ros.h>
-#include <ros/time.h>
+#include <rclcpp/rclcpp.hpp>
+#include <rcl_interfaces/msg/set_parameters_result.hpp> // For parameter callback
 
-#include <geometry_msgs/PoseStamped.h>
-#include <mavros_msgs/State.h>
-#include <mavros_msgs/Trajectory.h>
-#include <ros/callback_queue.h>
-#include <std_msgs/Float64MultiArray.h>
-#include <std_msgs/Int64MultiArray.h>
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <mavros_msgs/msg/state.hpp>
+#include <mavros_msgs/msg/trajectory.hpp>
+#include <mavros_msgs/msg/position_target.hpp> // For fillUnusedTrajectorySetpoints
+#include <std_msgs/msg/float64_multi_array.hpp> // If used by publishers
+#include <std_msgs/msg/int64_multi_array.hpp>   // If used by publishers
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
-#include <dynamic_reconfigure/server.h>
-#include <safe_landing_planner/SLPGridMsg.h>
-#include <safe_landing_planner/WaypointGeneratorNodeConfig.h>
+// #include <dynamic_reconfigure/server.h> // Removed
+#include <safe_landing_planner/msg/slp_grid_msg.hpp> // Updated custom message
+// #include <safe_landing_planner/WaypointGeneratorNodeConfig.h> // Removed
 
-#include <safe_landing_planner/waypoint_generator.hpp>
+#include <safe_landing_planner/waypoint_generator.hpp> // Assumes this is updated or ROS-agnostic enough
+
+#include <Eigen/Dense> // Already in waypoint_generator.hpp but good for clarity
+#include <vector>
+#include <string>
+#include <functional> // For std::bind
+#include <memory> // For std::unique_ptr, std::make_shared
 
 namespace avoidance {
 
-class WaypointGeneratorNode final {
+class WaypointGeneratorNode final : public rclcpp::Node { // Inherit from rclcpp::Node
  public:
-  WaypointGeneratorNode(const ros::NodeHandle& nh);
+  explicit WaypointGeneratorNode(const rclcpp::NodeOptions& options); // Updated constructor
   ~WaypointGeneratorNode() = default;
 
-  /**
-  * @brief spins node
-  **/
-  void startNode();
+  // startNode() logic will be moved into constructor or separate init called by constructor
 
  protected:
-  WaypointGenerator waypointGenerator_;
+  WaypointGenerator waypointGenerator_; // Algorithm class
 
-  ros::NodeHandle nh_;
-  ros::NodeHandle nh_private_;
+  // ros::NodeHandle nh_; // Removed
+  // ros::NodeHandle nh_private_; // Removed
 
-  ros::Timer cmdloop_timer_;
-  std::unique_ptr<ros::AsyncSpinner> cmdloop_spinner_;
-  ros::CallbackQueue cmdloop_queue_;
+  rclcpp::TimerBase::SharedPtr cmdloop_timer_;
+  // std::unique_ptr<ros::AsyncSpinner> cmdloop_spinner_; // Removed
+  // ros::CallbackQueue cmdloop_queue_; // Removed
 
-  ros::Subscriber pose_sub_;
-  ros::Subscriber trajectory_sub_;
+  // Subscribers
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
+  rclcpp::Subscription<mavros_msgs::msg::Trajectory>::SharedPtr trajectory_sub_; // For goal from FCU mission
+  rclcpp::Subscription<safe_landing_planner::msg::SLPGridMsg>::SharedPtr grid_sub_;
+  // ros::Subscriber pos_index_sub_; // What type was this? Assuming Int64MultiArray for now if it's index based
+  rclcpp::Subscription<std_msgs::msg::Int64MultiArray>::SharedPtr pos_index_sub_;
+  rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
 
-  ros::Subscriber grid_sub_;
-  ros::Subscriber pos_index_sub_;
-  ros::Subscriber state_sub_;
-
-  ros::Publisher trajectory_pub_;
-  ros::Publisher land_hysteresis_pub_;
-  ros::Publisher marker_goal_pub_;
+  // Publishers
+  rclcpp::Publisher<mavros_msgs::msg::Trajectory>::SharedPtr trajectory_pub_; // For sending waypoints
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr land_hysteresis_pub_; // For visualization
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_goal_pub_; // For visualization
 
   bool grid_received_ = false;
-  double spin_dt_ = 0.1;
+  double spin_dt_ = 0.1; // Will be a parameter
   Eigen::Vector3f goal_visualization_ = Eigen::Vector3f::Zero();
 
-  dynamic_reconfigure::Server<safe_landing_planner::WaypointGeneratorNodeConfig> server_;
+  // dynamic_reconfigure::Server<safe_landing_planner::WaypointGeneratorNodeConfig> server_; // Removed
+
+  // Parameter callback
+  rcl_interfaces::msg::SetParametersResult parametersCallback(
+      const std::vector<rclcpp::Parameter> &parameters);
 
   /**
   * @brief main loop callback
-  * @param[in] event, event timing information
   **/
-  void cmdLoopCallback(const ros::TimerEvent& event);
-
-  /**
-  * @brief     sets parameters from ROS parameter server
-  * @param     config, struct containing all the parameters
-  * @param     level, bitmask to group together reconfigurable parameters
-  **/
-  void dynamicReconfigureCallback(safe_landing_planner::WaypointGeneratorNodeConfig& config, uint32_t level);
+  void cmdLoopCallback(); // No TimerEvent
 
   /**
   * @brif callback for vehicle position and orientation
   * @param[in] msg, pose message coming fro the FCU
   **/
-  void positionCallback(const geometry_msgs::PoseStamped& msg);
+  void positionCallback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg); // Updated signature
 
   /**
   * @brief     callaback for setting the goal from the FCU Mission Waypoints
   * @param[in] msg, current and next position goals
   **/
-  void trajectoryCallback(const mavros_msgs::Trajectory& msg);
+  void trajectoryCallback(const mavros_msgs::msg::Trajectory::ConstSharedPtr msg); // Updated signature
 
   /**
   * @brief     callaback with the grid calculated by the safe_landing_planner
   * @param[in] msg, grid
   **/
-  void gridCallback(const safe_landing_planner::SLPGridMsg& msg);
+  void gridCallback(const safe_landing_planner::msg::SLPGridMsg::ConstSharedPtr msg); // Updated signature
 
   /**
   * @brief     callaback with the vehicle state
   * @param[in] msg, FCU vehicle state
   **/
-  void stateCallback(const mavros_msgs::State& msg);
+  void stateCallback(const mavros_msgs::msg::State::ConstSharedPtr msg); // Updated signature
 
   /**
   * @brief     publishes the computed waypoints to the FCU

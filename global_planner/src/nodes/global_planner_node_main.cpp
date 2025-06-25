@@ -1,13 +1,16 @@
-#include "global_planner/global_planner_node.h"
+#include "global_planner/global_planner_node.h" // This header now includes rclcpp.hpp
+#include <memory> // For std::make_shared
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "global_planner_node");
+  rclcpp::init(argc, argv);
 
-  ros::NodeHandle nh("~");
-  ros::NodeHandle nh_private("");
+  // Node options can be configured here if needed, e.g., for automatic parameter loading from a YAML file.
+  rclcpp::NodeOptions options;
+  options.automatically_declare_parameters_from_overrides(true); // Good practice
 
-  global_planner::GlobalPlannerNode global_planner_node(nh, nh_private);
+  auto global_planner_node = std::make_shared<global_planner::GlobalPlannerNode>(options);
 
-  ros::spin();
+  rclcpp::spin(global_planner_node);
+  rclcpp::shutdown();
   return 0;
 }

@@ -1,8 +1,8 @@
 #ifndef RVIZ_WORLD_H
 #define RVIZ_WORLD_H
 
-#include <geometry_msgs/PoseStamped.h>
-#include <ros/ros.h>
+#include <geometry_msgs/msg/pose_stamped.hpp> // Updated include
+#include <rclcpp/rclcpp.hpp>                  // Replaces ros/ros.h
 #include <Eigen/Core>
 #include <fstream>
 #include <iostream>
@@ -10,8 +10,8 @@
 #include <vector>
 #include "yaml-cpp/yaml.h"
 
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
+#include <visualization_msgs/msg/marker.hpp>       // Updated include
+#include <visualization_msgs/msg/marker_array.hpp> // Updated include
 
 #include <sys/stat.h>
 
@@ -33,39 +33,38 @@ void operator>>(const YAML::Node& node, Eigen::Vector3f& v);
 void operator>>(const YAML::Node& node, Eigen::Vector4f& v);
 void operator>>(const YAML::Node& node, world_object& item);
 
-class WorldVisualizer {
+class WorldVisualizer : public rclcpp::Node { // Inherit from rclcpp::Node
  private:
   /**
   * @brief      helper function to resolve gazebo model path
   **/
   int resolveUri(std::string& uri);
 
-  ros::NodeHandle nh_;
+  // ros::NodeHandle nh_; // Removed, 'this' will be used as Node::SharedPtr
 
-  ros::Timer loop_timer_;
-
-  ros::Subscriber pose_sub_;
-  ros::Publisher world_pub_;
-  ros::Publisher drone_pub_;
+  rclcpp::TimerBase::SharedPtr loop_timer_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr world_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr drone_pub_;
 
   std::string world_path_;
-  std::string nodelet_ns_;
+  std::string nodelet_ns_; // May need to be re-evaluated how this is used in ROS2
 
-  void loopCallback(const ros::TimerEvent& event);
+  void loopCallback(); // Updated signature
 
  public:
-  WorldVisualizer(const ros::NodeHandle& nh, const std::string& nodelet_ns);
+  explicit WorldVisualizer(const rclcpp::NodeOptions & options, const std::string& nodelet_ns = ""); // Updated constructor
 
   /**
   * @brief      initializes all publishers used for local planner visualization
   * @param      nh, nodehandle to initialize publishers
   **/
-  void initializePublishers(ros::NodeHandle& nh);
+  void initializePublishers(); // If class is a Node, nh param is not needed
 
   /**
   * @brief      callback for subscribing mav pose topic
   **/
-  void positionCallback(const geometry_msgs::PoseStamped& msg);
+  void positionCallback(const geometry_msgs::msg::PoseStamped::ConstSharedPtr msg); // Updated signature
 
   /**
   * @brief      parse the yaml file and publish world marker

@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <vector>
+#include <rclcpp/time.hpp> // For rclcpp::Time
 
 #include "avoidance/common.h"
 
@@ -126,6 +127,13 @@ class WaypointGenerator : public usm::StateMachine<SLPState> {
   bool evaluatePatch(Eigen::Vector2i& left_upper_corner);
 
   void initializeMask();
+
+  /**
+  * @brief     getter method for the system time
+  * @returns   current ROS time
+  **/
+  virtual rclcpp::Time getSystemTime(); // Added this method
+
   friend class WaypointGeneratorNode;  // TODO make an API and get rid of this
 };
 }

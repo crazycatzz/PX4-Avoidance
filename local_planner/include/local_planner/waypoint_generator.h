@@ -7,7 +7,7 @@
 
 #include <Eigen/Dense>
 
-#include <ros/time.h>
+#include <rclcpp/time.hpp> // Replaces ros/time.h
 
 #include <string>
 #include <vector>
@@ -48,8 +48,8 @@ class WaypointGenerator : public usm::StateMachine<PlannerState> {
 
   float curr_yaw_rad_ = NAN;
   float curr_pitch_deg_ = NAN;
-  ros::Time last_time_{99999.};
-  ros::Time current_time_{99999.};
+  rclcpp::Time last_time_; // Initialization will be handled in constructor or to rclcpp::Time(0,0,RCL_ROS_TIME)
+  rclcpp::Time current_time_; // Initialization will be handled in constructor
 
   float smoothing_speed_xy_{10.f};
   float smoothing_speed_z_{3.0f};
@@ -70,7 +70,7 @@ class WaypointGenerator : public usm::StateMachine<PlannerState> {
 
   NavigationState nav_state_ = NavigationState::none;
 
-  ros::Time velocity_time_;
+  rclcpp::Time velocity_time_; // Updated type
 
   // state
   bool trigger_reset_ = false;
@@ -181,7 +181,7 @@ class WaypointGenerator : public usm::StateMachine<PlannerState> {
   * @brief     getter method for the system time
   * @returns   current ROS time
   **/
-  virtual ros::Time getSystemTime();
+  virtual rclcpp::Time getSystemTime(); // Updated return type
 
   /**
   * @brief     getter method to visualize offtrack state

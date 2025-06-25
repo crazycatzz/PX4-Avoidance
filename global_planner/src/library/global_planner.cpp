@@ -1,4 +1,7 @@
 #include "global_planner/global_planner.h"
+#include <rclcpp/logging.hpp> // For RCLCPP_INFO
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp> // For tf2::getYaw and tf2::toMsg
+#include <tf2/LinearMath/Quaternion.h> // For tf2::Quaternion
 
 namespace global_planner {
 
@@ -27,9 +30,9 @@ void GlobalPlanner::calculateAccumulatedHeightPrior() {
 }
 
 // Updates the current pose and keeps track of the path back
-void GlobalPlanner::setPose(const geometry_msgs::PoseStamped& new_pose) {
+void GlobalPlanner::setPose(const geometry_msgs::msg::PoseStamped& new_pose) { // Updated type
   curr_pos_ = new_pose.pose.position;
-  curr_yaw_ = tf::getYaw(new_pose.pose.orientation);
+  curr_yaw_ = tf2::getYaw(new_pose.pose.orientation); // Changed to tf2::getYaw
   Cell curr_cell = Cell(curr_pos_);
   if (!going_back_ && (path_back_.empty() || curr_cell != path_back_.back())) {
     // Keep track of where we have been, add current position to path_back_ if
@@ -204,9 +207,9 @@ double GlobalPlanner::getRisk(const Node& node) {
 
 // Returns the risk of the quadratic Bezier curve defined by poses
 // TODO: think about this
-double GlobalPlanner::getRiskOfCurve(const std::vector<geometry_msgs::PoseStamped>& msg) {
+double GlobalPlanner::getRiskOfCurve(const std::vector<geometry_msgs::msg::PoseStamped>& msg) { // Updated type
   if (msg.size() != 3) {
-    ROS_INFO("Bezier msg must have 3 points");
+    RCLCPP_INFO(rclcpp::get_logger("global_planner_lib"), "Bezier msg must have 3 points");
     return -1;
   }
 
@@ -332,28 +335,30 @@ double GlobalPlanner::getHeuristic(const Node& u, const Cell& goal) {
   return heuristic;
 }
 
-geometry_msgs::PoseStamped GlobalPlanner::createPoseMsg(const Cell& cell, double yaw) {
-  geometry_msgs::PoseStamped pose_msg;
+geometry_msgs::msg::PoseStamped GlobalPlanner::createPoseMsg(const Cell& cell, double yaw) { // Updated type
+  geometry_msgs::msg::PoseStamped pose_msg; // Updated type
   pose_msg.header.frame_id = frame_id_;
-  pose_msg.pose.position = cell.toPoint();
-  pose_msg.pose.orientation = tf::createQuaternionMsgFromYaw(yaw);
+  pose_msg.pose.position = cell.toPoint(); // toPoint() now returns geometry_msgs::msg::Point
+  tf2::Quaternion q;
+  q.setRPY(0, 0, yaw);
+  pose_msg.pose.orientation = tf2::toMsg(q); // Changed to use tf2
   return pose_msg;
 }
 
-nav_msgs::Path GlobalPlanner::getPathMsg() { return getPathMsg(curr_path_); }
+nav_msgs::msg::Path GlobalPlanner::getPathMsg() { return getPathMsg(curr_path_); } // Updated type
 
-nav_msgs::Path GlobalPlanner::getPathMsg(const std::vector<Cell>& path) {
-  nav_msgs::Path path_msg;
+nav_msgs::msg::Path GlobalPlanner::getPathMsg(const std::vector<Cell>& path) { // Updated type
+  nav_msgs::msg::Path path_msg; // Updated type
   path_msg.header.frame_id = frame_id_;
 
-  if (path.size() == 0) {
+  if (path.empty()) { // Changed to path.empty()
     return path_msg;
   }
 
   // Use actual position instead of the center of the cell
   double last_yaw = curr_yaw_;
 
-  for (int i = 0; i < path.size() - 1; ++i) {
+  for (size_t i = 0; i < path.size() - 1; ++i) { // Use size_t
     Cell p = path[i];
     double new_yaw = nextYaw(p, path[i + 1], last_yaw);
     // if (new_yaw != last_yaw) {   // only publish corner points
@@ -361,19 +366,19 @@ nav_msgs::Path GlobalPlanner::getPathMsg(const std::vector<Cell>& path) {
     // }
     last_yaw = new_yaw;
   }
-  Cell last_point = path[path.size() - 1];  // Last point should have the same yaw as the previous point
+  Cell last_point = path.back();  // Use path.back() for clarity // Last point should have the same yaw as the previous point
   path_msg.poses.push_back(createPoseMsg(last_point, last_yaw));
   return path_msg;
 }
 
-PathWithRiskMsg GlobalPlanner::getPathWithRiskMsg() {
-  nav_msgs::Path path_msg = getPathMsg();
-  PathWithRiskMsg risk_msg;
+global_planner::msg::PathWithRiskMsg GlobalPlanner::getPathWithRiskMsg() { // Updated type
+  nav_msgs::msg::Path path_msg = getPathMsg(); // Updated type
+  global_planner::msg::PathWithRiskMsg risk_msg; // Updated type
   risk_msg.header = path_msg.header;
   risk_msg.poses = path_msg.poses;
 
   for (const auto& pose : path_msg.poses) {
-    double risk = getRisk(Cell(pose.pose.position));
+    double risk = getRisk(Cell(pose.pose.position)); // Cell constructor takes geometry_msgs::msg::Point now
     risk_msg.risks.push_back(risk);
   }
   return risk_msg;
@@ -420,11 +425,13 @@ bool GlobalPlanner::findPath(std::vector<Cell>& path) {
   // behind the start cell Cell parent_of_s = Cell(curr_pos_);
   Cell parent_of_s(subtractPoints(curr_pos_, scalePoint(curr_vel_, search_time_)));
   if (!use_current_yaw_) {
-    Cell parent_of_s = s;  // Ignore the current yaw
+    // This re-declaration of parent_of_s shadows the one above.
+    // It should probably be: parent_of_s = s;
+    parent_of_s = s;  // Ignore the current yaw
   }
 
-  ROS_INFO("Planning a path from %s to %s", s.asString().c_str(), t.asString().c_str());
-  ROS_INFO("curr_pos_: %2.2f,%2.2f,%2.2f\t s: %2.2f,%2.2f,%2.2f", curr_pos_.x, curr_pos_.y, curr_pos_.z, s.xPos(),
+  RCLCPP_INFO(rclcpp::get_logger("global_planner_lib"), "Planning a path from %s to %s", s.asString().c_str(), t.asString().c_str());
+  RCLCPP_INFO(rclcpp::get_logger("global_planner_lib"), "curr_pos_: %2.2f,%2.2f,%2.2f\t s: %2.2f,%2.2f,%2.2f", curr_pos_.x, curr_pos_.y, curr_pos_.z, s.xPos(),
            s.yPos(), s.zPos());
 
   bool found_path = false;
@@ -488,12 +495,12 @@ bool GlobalPlanner::getGlobalPath() {
 
   if (goal_must_be_free_ && getRisk(t) > max_cell_risk_) {
     // If goal is occupied, no path is published
-    ROS_INFO("Goal position is occupied");
+    RCLCPP_INFO(rclcpp::get_logger("global_planner_lib"), "Goal position is occupied");
     goal_is_blocked_ = true;
     return false;
   } else if (current_cell_blocked_) {
     // If current position is occupied the way back is published
-    ROS_INFO("Current position is occupied, going back.");
+    RCLCPP_INFO(rclcpp::get_logger("global_planner_lib"), "Current position is occupied, going back.");
     // goBack();
     // return true;
     return false;
@@ -502,7 +509,7 @@ bool GlobalPlanner::getGlobalPath() {
     std::vector<Cell> path;
     if (!findPath(path)) {
       double goal_risk = getRisk(t);
-      ROS_INFO("  Failed to find a path, risk of t: %3.2f", goal_risk);
+      RCLCPP_INFO(rclcpp::get_logger("global_planner_lib"), "  Failed to find a path, risk of t: %3.2f", goal_risk);
       goal_is_blocked_ = true;
       return false;
     }
@@ -514,7 +521,7 @@ bool GlobalPlanner::getGlobalPath() {
 // Sets the current path to be the path back until a safe cell is reached
 // Then the mission can be tried again or a new mission can be set
 void GlobalPlanner::goBack() {
-  ROS_INFO("  GO BACK ");
+  RCLCPP_INFO(rclcpp::get_logger("global_planner_lib"), "  GO BACK ");
   going_back_ = true;
   std::vector<Cell> new_path = path_back_;
   std::reverse(new_path.begin(), new_path.end());

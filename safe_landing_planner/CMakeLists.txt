@@ -1,72 +1,44 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.16)
 project(safe_landing_planner)
 
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(mav_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(PCL REQUIRED)
+find_package(mavros REQUIRED)
+find_package(mavros_msgs REQUIRED)
+find_package(avoidance REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(yaml-cpp REQUIRED) # For parameter files
 
+ament_cmake_auto_set_compiler_flags()
 
-## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS
-  tf
-  pcl_ros
-  mavros
-  mavros_extras
-  mavros_msgs
-  mavlink
-  message_generation
-  avoidance
-)
-find_package(PCL 1.7 REQUIRED)
-
-if(DISABLE_SIMULATION)
-  message(STATUS "Building avoidance without Gazebo Simulation")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDISABLE_SIMULATION")
-endif()
+# Removed DISABLE_SIMULATION block
 
 ## Generate messages in the 'msg' folder
-add_message_files(FILES SLPGridMsg.msg)
-generate_messages(
-  DEPENDENCIES
-  std_msgs
-  geometry_msgs
+# Assumes SLPGridMsg.msg is moved to a 'msg' subdirectory
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/SLPGridMsg.msg"
+  DEPENDENCIES std_msgs geometry_msgs
 )
+# Create a variable that other targets can depend on for message generation
+set(${PROJECT_NAME}_MSG_TARGETS rosidl_typesupport_cpp::${PROJECT_NAME})
 
-################################################
-## Declare ROS dynamic reconfigure parameters ##
-################################################
 
-## To declare and build dynamic reconfigure parameters within this
-## package, follow these steps:
-## * In the file package.xml:
-##   * add a build_depend and a run_depend tag for "dynamic_reconfigure"
-## * In this file (CMakeLists.txt):
-##   * add "dynamic_reconfigure" to
-##     find_package(catkin REQUIRED COMPONENTS ...)
-##   * uncomment the "generate_dynamic_reconfigure_options" section below
-##     and list every .cfg file to be processed
-
-## Generate dynamic reconfigure parameters in the 'cfg' folder
-generate_dynamic_reconfigure_options(
-  cfg/SafeLandingPlannerNode.cfg
-  cfg/WaypointGeneratorNode.cfg
-)
+# Dynamic reconfigure (generate_dynamic_reconfigure_options) is removed for:
+# cfg/SafeLandingPlannerNode.cfg
+# cfg/WaypointGeneratorNode.cfg
+# Parameters should be handled using ROS2 parameter system (YAML files, declare_parameter in code).
 
 ###################################
-## catkin specific configuration ##
+## ament specific configuration ##
 ###################################
-## The catkin_package macro generates cmake config files for your package
-## Declare things to be passed to dependent projects
-## INCLUDE_DIRS: uncomment this if you package contains header files
-## LIBRARIES: libraries you create in this project that dependent projects also need
-## CATKIN_DEPENDS: catkin_packages dependent projects also need
-## DEPENDS: system dependencies of this project that dependent projects also need
-catkin_package(
-  INCLUDE_DIRS include
-  CATKIN_DEPENDS roscpp rospy std_msgs mavros_msgs geometry_msgs mav_msgs sensor_msgs message_runtime tf message_runtime avoidance
-#  DEPENDS system_lib
-)
+ament_package()
 
 ###########
 ## Build ##
@@ -78,97 +50,161 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif(NOT CMAKE_BUILD_TYPE)
 
-## Specify additional locations of header files
-## Your package locations should be listed before other locations
-# include_directories(include)
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
+## Library: safe_landing_planner (core logic)
+# Note: Original SAFE_LANDING_PLANNER_CPP_FILES included waypoint_generator_node.cpp.
+# This is unusual for a library if waypoint_generator_node.cpp contains a main().
+# Assuming waypoint_generator.cpp contains the logic, and waypoint_generator_node.cpp is a main file.
+set(SAFE_LANDING_PLANNER_LIB_SRC
+  "src/nodes/safe_landing_planner.cpp" # Core SLP logic
+  "src/nodes/waypoint_generator.cpp"   # Core Waypoint Generator logic
+  "src/nodes/safe_landing_planner_visualization.cpp"
+  # "src/nodes/safe_landing_planner_node.cpp" # This should be a main or part of executable
+  # "src/nodes/waypoint_generator_node.cpp" # This should be a main or part of executable
+)
+add_library(safe_landing_planner SHARED ${SAFE_LANDING_PLANNER_LIB_SRC})
+
+target_include_directories(safe_landing_planner PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
   ${PCL_INCLUDE_DIRS}
+  ${yaml-cpp_INCLUDE_DIRS} # If yaml-cpp is used directly by library code
+)
+ament_target_dependencies(safe_landing_planner PUBLIC
+  rclcpp
+  std_msgs
+  geometry_msgs
+  sensor_msgs
+  mav_msgs
+  tf2_ros
+  pcl_conversions
+  mavros
+  mavros_msgs
+  avoidance # Assuming avoidance exports target e.g. avoidance::avoidance
+  ${${PROJECT_NAME}_MSG_TARGETS} # For SLPGridMsg
+)
+target_link_libraries(safe_landing_planner PUBLIC
+  ${PCL_LIBRARIES}
+  ${yaml-cpp_LIBRARIES} # If yaml-cpp is used directly by library code
 )
 
-## Declare a C++ library
-# add_library(avoidance
-#   src/${PROJECT_NAME}/avoidance.cpp
-# )
-set(SAFE_LANDING_PLANNER_CPP_FILES     "src/nodes/safe_landing_planner_node.cpp"
-                                       "src/nodes/safe_landing_planner.cpp"
-                                       "src/nodes/waypoint_generator.cpp"
-                                       "src/nodes/waypoint_generator_node.cpp"
-                                       "src/nodes/safe_landing_planner_visualization.cpp"
+## Executable: safe_landing_planner_node
+# Assuming safe_landing_planner_node.cpp (from original lib files) contains the node logic
+# and safe_landing_planner_node_main.cpp is the main.
+add_executable(safe_landing_planner_node
+  src/nodes/safe_landing_planner_node_main.cpp
+  src/nodes/safe_landing_planner_node.cpp # Added here, assuming it's not just main
 )
+ament_target_dependencies(safe_landing_planner_node PUBLIC
+  rclcpp
+  safe_landing_planner # Links against the main library
+)
+# target_link_libraries(safe_landing_planner_node PUBLIC safe_landing_planner) # Alternative way
 
-add_library(safe_landing_planner     "${SAFE_LANDING_PLANNER_CPP_FILES}")
+## Executable: waypoint_generator_node
+# Assuming waypoint_generator_node.cpp (from original lib files) contains the node logic
+# and is also the main, or there's another main file for it.
+# The original CMakeLists adds waypoint_generator_node.cpp as an executable source.
+add_executable(waypoint_generator_node
+  src/nodes/waypoint_generator_node.cpp # This was in LIB before, now assumed to be main or include main
+)
+ament_target_dependencies(waypoint_generator_node PUBLIC
+  rclcpp
+  safe_landing_planner # Links against the main library (which includes waypoint_generator logic)
+)
+# target_link_libraries(waypoint_generator_node PUBLIC safe_landing_planner) # Alternative way
 
-## Add cmake target dependencies of the library
-## as an example, code may need to be generated before libraries
-## either from message generation or dynamic reconfigure
-add_dependencies(safe_landing_planner ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-## Declare a C++ executable
-# add_executable(avoidance_node src/avoidance_node.cpp)
-add_executable(safe_landing_planner_node src/nodes/safe_landing_planner_node_main.cpp)
-add_executable(waypoint_generator_node src/nodes/waypoint_generator_node.cpp)
+  #############
+  ## Install ##
+  #############
+  install(TARGETS safe_landing_planner safe_landing_planner_node waypoint_generator_node
+    EXPORT export_${PROJECT_NAME}
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION lib/${PROJECT_NAME} # Install executables
+  )
 
+  install(DIRECTORY include/
+    DESTINATION include/
+    FILES_MATCHING PATTERN "*.h"
+  )
 
-## Add cmake target dependencies of the executable
-## same as for the library above
-# add_dependencies(avoidance_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+  ament_export_include_directories(include)
+  ament_export_libraries(safe_landing_planner)
+  ament_export_dependencies(
+    rclcpp
+    std_msgs
+    geometry_msgs
+    sensor_msgs
+    mav_msgs
+    tf2_ros
+    pcl_conversions
+    mavros
+    mavros_msgs
+    avoidance
+    rosidl_default_runtime # For SLPGridMsg
+    # yaml-cpp is not typically exported as a ROS dep
+  )
 
-## Specify libraries to link a library or executable target against
-# target_link_libraries(avoidance_node
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-# )
-target_link_libraries(safe_landing_planner_node
-  safe_landing_planner
-  ${catkin_LIBRARIES} )
-target_link_libraries(waypoint_generator_node
-    safe_landing_planner
-    ${catkin_LIBRARIES} )
+  install(EXPORT export_${PROJECT_NAME}
+    NAMESPACE ${PROJECT_NAME}::
+    DESTINATION lib/cmake/${PROJECT_NAME}
+  )
+
+  # Install parameter files (converted from .cfg files)
+  # install(DIRECTORY config
+  #   DESTINATION share/${PROJECT_NAME}/config
+  #   FILES_MATCHING PATTERN "*.yaml"
+  # )
 
   #############
   ## Testing ##
   #############
 
-if(CATKIN_ENABLE_TESTING)
-    # Add gtest based cpp test target and link libraries
-    catkin_add_gtest(${PROJECT_NAME}-test test/main.cpp
-                                          test/test_safe_landing_planner.cpp
-                                          test/test_waypoint_generator.cpp
-                                          test/test_grid.cpp
-                                        )
+  if(BUILD_TESTING)
+    find_package(ament_lint_auto REQUIRED)
+    ament_lint_auto_find_test_dependencies() # Finds gtest, linters
 
-    if(TARGET ${PROJECT_NAME}-test)
-        target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME}
-                                                   ${catkin_LIBRARIES}
-                              )
-    endif()
+    set(SLP_TEST_FILES test/main.cpp
+                       test/test_safe_landing_planner.cpp
+                       test/test_waypoint_generator.cpp
+                       test/test_grid.cpp
+    )
+    ament_add_gtest(${PROJECT_NAME}-test "${SLP_TEST_FILES}")
 
+    target_link_libraries(${PROJECT_NAME}-test PRIVATE
+      safe_landing_planner # Link against the library being tested
+      ${PCL_LIBRARIES}
+      ${yaml-cpp_LIBRARIES} # If tests use yaml-cpp directly or through lib
+    )
+    ament_target_dependencies(${PROJECT_NAME}-test PUBLIC
+      rclcpp # For ROS utilities in tests
+      # Add other specific ROS dependencies if test code uses them directly
+    )
 
     if (${CMAKE_BUILD_TYPE} STREQUAL "Coverage")
-        SET(CMAKE_CXX_FLAGS "-g -O0 -fprofile-arcs -ftest-coverage --coverage")
-        SET(CMAKE_C_FLAGS "-g -O0 -fprofile-arcs -ftest-coverage --coverage")
-        SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+        SET(CMAKE_CXX_FLAGS_INIT "${CMAKE_CXX_FLAGS}" CACHE STRING "" FORCE)
+        SET(CMAKE_C_FLAGS_INIT "${CMAKE_C_FLAGS}" CACHE STRING "" FORCE)
+        SET(CMAKE_EXE_LINKER_FLAGS_INIT "${CMAKE_EXE_LINKER_FLAGS}" CACHE STRING "" FORCE)
+
+        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_INIT} -g -O0 -fprofile-arcs -ftest-coverage --coverage")
+        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS_INIT} -g -O0 -fprofile-arcs -ftest-coverage --coverage")
+        SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} --coverage")
 
         add_custom_target(${PROJECT_NAME}-test_coverage
             COMMAND lcov --zerocounters --directory ${PROJECT_BINARY_DIR}
-            COMMAND lcov --capture  --initial --no-external --directory ${PROJECT_BINARY_DIR} --base-directory ${${PROJECT_NAME}_SOURCE_DIR} --output-file base_coverage.info --rc lcov_branch_coverage=1
-            COMMAND ${PROJECT_NAME}-test
-            COMMAND lcov --capture  --no-external --directory ${PROJECT_BINARY_DIR} --base-directory ${${PROJECT_NAME}_SOURCE_DIR} --output-file test_coverage.info --rc lcov_branch_coverage=1
+            COMMAND lcov --capture --initial --no-external --directory ${PROJECT_BINARY_DIR} --base-directory ${CMAKE_CURRENT_SOURCE_DIR} --output-file base_coverage.info --rc lcov_branch_coverage=1
+            COMMAND ${CMAKE_CTEST_COMMAND} --force-new-ctest-process --output-on-failure # Run all tests
+            COMMAND lcov --capture --no-external --directory ${PROJECT_BINARY_DIR} --base-directory ${CMAKE_CURRENT_SOURCE_DIR} --output-file test_coverage.info --rc lcov_branch_coverage=1
             COMMAND lcov -a base_coverage.info -a test_coverage.info -o coverage.info --rc lcov_branch_coverage=1
             COMMAND lcov --rc lcov_branch_coverage=1 --summary coverage.info
-            WORKING_DIRECTORY .
+            WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
             DEPENDS ${PROJECT_NAME}-test
         )
         add_custom_target(${PROJECT_NAME}-test_coverage_html
             COMMAND genhtml coverage.info --output-directory out --branch-coverage
-            COMMAND x-www-browser out/index.html
-            WORKING_DIRECTORY .
+            WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
             DEPENDS ${PROJECT_NAME}-test_coverage
         )
     endif()
-
-    ## Add folders to be run by python nosetests
-    # catkin_add_nosetests(test)
-endif()
+  endif()

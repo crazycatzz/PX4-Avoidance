@@ -1,16 +1,25 @@
 #include "local_planner/waypoint_generator.h"
 
 #include "avoidance/common.h"
-#include "local_planner/planner_functions.h"
+#include "local_planner/planner_functions.h" // Uses rclcpp::Time
 
-#include <ros/param.h>
+// #include <ros/param.h> // Removed
+#include <rclcpp/logging.hpp> // For RCLCPP_DEBUG, RCLCPP_INFO
+#include <rclcpp/clock.hpp>   // For rclcpp::Clock
 
 #define normXY() topRows<2>().norm()
 
 namespace avoidance {
 
-WaypointGenerator::WaypointGenerator() : usm::StateMachine<PlannerState>(PlannerState::LOITER) {}
-ros::Time WaypointGenerator::getSystemTime() { return ros::Time::now(); }
+WaypointGenerator::WaypointGenerator() : usm::StateMachine<PlannerState>(PlannerState::LOITER) {
+  // Initialize time members properly
+  rclcpp::Clock sys_clock(RCL_ROS_TIME);
+  last_time_ = sys_clock.now(); // Or rclcpp::Time(0, 0, RCL_ROS_TIME) if preferred for epoch start
+  current_time_ = sys_clock.now();
+  velocity_time_ = sys_clock.now();
+}
+
+rclcpp::Time WaypointGenerator::getSystemTime() { return rclcpp::Clock(RCL_ROS_TIME).now(); } // Updated
 
 using avoidance::PlannerState;
 std::string toString(PlannerState state) {
@@ -81,6 +90,7 @@ usm::Transition WaypointGenerator::runCurrentState() {
 
 usm::Transition WaypointGenerator::runTryPath() {
   Eigen::Vector3f setpoint = position_;
+  // planner_info_.last_path_time is already rclcpp::Time from avoidance_output.h update
   const bool tree_available = getSetpointFromPath(planner_info_.path_node_positions, planner_info_.last_path_time,
                                                   planner_info_.cruise_velocity, getSystemTime(), setpoint);
 
@@ -96,7 +106,7 @@ usm::Transition WaypointGenerator::runTryPath() {
   } else if (isAltitudeChange()) {
     return usm::Transition::NEXT1;  // ALTITUDE_CHANGE
   } else if (tree_available) {
-    ROS_DEBUG("[WG] Using calculated tree\n");
+    RCLCPP_DEBUG(rclcpp::get_logger("waypoint_generator"), "[WG] Using calculated tree\n");
     return usm::Transition::REPEAT;
   } else {
     return usm::Transition::NEXT2;  // DIRECT
@@ -165,7 +175,7 @@ usm::Transition WaypointGenerator::runLoiter() {
     hover_position_ = position_;
   }
   output_.goto_position = hover_position_;
-  ROS_DEBUG("[WG] Hover at: [%f, %f, %f].", output_.goto_position.x(), output_.goto_position.y(),
+  RCLCPP_DEBUG(rclcpp::get_logger("waypoint_generator"), "[WG] Hover at: [%f, %f, %f].", output_.goto_position.x(), output_.goto_position.y(),
             output_.goto_position.z());
   getPathMsg();
 
@@ -180,7 +190,7 @@ usm::Transition WaypointGenerator::runDirect() {
   Eigen::Vector3f dir = (goal_ - position_).normalized();
   output_.goto_position = position_ + dir;
 
-  ROS_DEBUG("[WG] Going straight to selected waypoint: [%f, %f, %f].", output_.goto_position.x(),
+  RCLCPP_DEBUG(rclcpp::get_logger("waypoint_generator"), "[WG] Going straight to selected waypoint: [%f, %f, %f].", output_.goto_position.x(),
             output_.goto_position.y(), output_.goto_position.z());
 
   getPathMsg();
@@ -199,19 +209,19 @@ usm::Transition WaypointGenerator::runDirect() {
 }
 
 void WaypointGenerator::calculateWaypoint() {
-  ROS_DEBUG("\033[1;32m[WG] Generate Waypoint, current position: [%f, %f, %f].\033[0m", position_.x(), position_.y(),
+  RCLCPP_DEBUG(rclcpp::get_logger("waypoint_generator"), "\033[1;32m[WG] Generate Waypoint, current position: [%f, %f, %f].\033[0m", position_.x(), position_.y(),
             position_.z());
   output_.linear_velocity_wp = Eigen::Vector3f(NAN, NAN, NAN);
 
   // Timing
   last_time_ = current_time_;
-  current_time_ = getSystemTime();
+  current_time_ = getSystemTime(); // This now returns rclcpp::Time
 
   iterateOnce();
   output_.waypoint_type = getState();
   if (getState() != prev_slp_state_) {
     std::string state_str = toString(getState());
-    ROS_DEBUG("\033[1;36m [WGN] Update to %s state \n \033[0m", state_str.c_str());
+    RCLCPP_DEBUG(rclcpp::get_logger("waypoint_generator"), "\033[1;36m [WGN] Update to %s state \n \033[0m", state_str.c_str());
   }
 }
 
@@ -301,7 +311,7 @@ void WaypointGenerator::smoothWaypoint(float dt) {
   smoothed_goto_location_ += smoothed_goto_location_velocity_ * dt;
   output_.smoothed_goto_position = smoothed_goto_location_;
 
-  ROS_DEBUG("[WG] Smoothed GoTo location: %f, %f, %f, with dt=%f", output_.smoothed_goto_position.x(),
+  RCLCPP_DEBUG(rclcpp::get_logger("waypoint_generator"), "[WG] Smoothed GoTo location: %f, %f, %f, with dt=%f", output_.smoothed_goto_position.x(),
             output_.smoothed_goto_position.y(), output_.smoothed_goto_position.z(), dt);
 }
 
@@ -383,7 +393,7 @@ void WaypointGenerator::adaptSpeed(float dt) {
 
   output_.adapted_goto_position = position_ + pose_to_wp;
 
-  ROS_INFO("[WG] Speed adapted WP: [%f %f %f].", output_.adapted_goto_position.x(), output_.adapted_goto_position.y(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator"), "[WG] Speed adapted WP: [%f %f %f].", output_.adapted_goto_position.x(), output_.adapted_goto_position.y(),
            output_.adapted_goto_position.z());
 }
 
@@ -391,7 +401,7 @@ void WaypointGenerator::adaptSpeed(float dt) {
 void WaypointGenerator::getPathMsg() {
   output_.adapted_goto_position = output_.goto_position;
 
-  float time_diff_sec = static_cast<float>((current_time_ - last_time_).toSec());
+  float time_diff_sec = static_cast<float>((current_time_ - last_time_).seconds()); // Changed to .seconds()
   float dt = time_diff_sec > 0.0f ? time_diff_sec : 0.0001f;
 
   // set the yaw at the setpoint based on our smoothed location
@@ -403,7 +413,7 @@ void WaypointGenerator::getPathMsg() {
     smoothWaypoint(dt);
   }
 
-  ROS_INFO("[WG] Final waypoint: [%f %f %f]. %f %f %f \n", output_.smoothed_goto_position.x(),
+  RCLCPP_INFO(rclcpp::get_logger("waypoint_generator"), "[WG] Final waypoint: [%f %f %f]. %f %f %f \n", output_.smoothed_goto_position.x(),
            output_.smoothed_goto_position.y(), output_.smoothed_goto_position.z(), output_.linear_velocity_wp.x(),
            output_.linear_velocity_wp.y(), output_.linear_velocity_wp.z());
   createPoseMsg(output_.position_wp, output_.orientation_wp, output_.smoothed_goto_position, setpoint_yaw_rad_);
@@ -445,7 +455,7 @@ bool WaypointGenerator::isAltitudeChange() {
         return false;
       }
     }
-    ROS_INFO("\033[1;35m[OA] Reach height first \033[0m");
+    RCLCPP_INFO(rclcpp::get_logger("waypoint_generator"), "\033[1;35m[OA] Reach height first \033[0m");
     return true;
   }
 

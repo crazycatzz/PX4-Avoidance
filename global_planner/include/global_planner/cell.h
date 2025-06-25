@@ -5,7 +5,7 @@
 #include <string>
 #include <tuple>
 
-#include <geometry_msgs/Point.h>
+#include <geometry_msgs/msg/point.hpp> // Updated include
 
 #include "global_planner/common.h"
 
@@ -19,7 +19,7 @@ class Cell {
   Cell(std::tuple<int, int, int> new_tuple);
   Cell(double x, double y, double z);
   Cell(double x, double y);
-  Cell(geometry_msgs::Point point);
+  Cell(const geometry_msgs::msg::Point& point); // Updated type
   // Cell(Eigen::Vector3d point);
 
   // Get the indices of the Cell
@@ -32,7 +32,7 @@ class Cell {
   double yPos() const;
   double zPos() const;
 
-  geometry_msgs::Point toPoint() const;
+  geometry_msgs::msg::Point toPoint() const; // Updated type
 
   double manhattanDist(double _x, double _y, double _z) const;
   double distance2D(const Cell& b) const;

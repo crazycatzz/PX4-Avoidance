@@ -1,28 +1,29 @@
 #ifndef LOCAL_PLANNER_LOCAL_PLANNER_H
 #define LOCAL_PLANNER_LOCAL_PLANNER_H
 
-#include <sensor_msgs/image_encodings.h>
+// #include <sensor_msgs/image_encodings.h> // Removed, not used in this header's public API
 #include "avoidance/histogram.h"
-#include "avoidance_output.h"
+#include "avoidance_output.h" // Updated to use rclcpp::Time
 #include "candidate_direction.h"
 #include "cost_parameters.h"
-#include "planner_functions.h"
+#include "planner_functions.h" // Updated to use rclcpp::Time
 
-#include <dynamic_reconfigure/server.h>
-#include <local_planner/LocalPlannerNodeConfig.h>
+// #include <dynamic_reconfigure/server.h> // Removed
+// #include <local_planner/LocalPlannerNodeConfig.h> // Removed
 
 #include <Eigen/Dense>
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
-#include <sensor_msgs/LaserScan.h>
-#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/msg/laser_scan.hpp> // Updated
+// #include <sensor_msgs/PointCloud2.h> // Removed, not directly used as member/param here
+                                        // original_cloud_vector_ is vector of PCL type
 
-#include <nav_msgs/GridCells.h>
-#include <nav_msgs/Path.h>
+// #include <nav_msgs/GridCells.h> // Removed
+// #include <nav_msgs/Path.h> // Removed
 
-#include <ros/time.h>
+#include <rclcpp/time.hpp> // Replaces ros/time.h
 #include <deque>
 #include <string>
 #include <vector>
@@ -47,8 +48,8 @@ class LocalPlanner {
 
   std::vector<FOV> fov_fcu_frame_;
 
-  ros::Time last_path_time_;
-  ros::Time last_pointcloud_process_time_;
+  rclcpp::Time last_path_time_; // Updated type
+  rclcpp::Time last_pointcloud_process_time_; // Updated type
 
   std::vector<int> closed_set_;
   std::vector<TreeNode> tree_;
@@ -100,7 +101,7 @@ class LocalPlanner {
 
   ModelParameters px4_;  // PX4 Firmware paramters
 
-  sensor_msgs::LaserScan distance_data_ = {};
+  sensor_msgs::msg::LaserScan distance_data_ = {}; // Updated type
   Eigen::Vector3f last_sent_waypoint_ = Eigen::Vector3f::Zero();
 
   // original_cloud_vector_ contains n complete clouds from the cameras
@@ -153,12 +154,16 @@ class LocalPlanner {
   * @brief    setter method for mission goal
   **/
   void applyGoal();
-  /**
-  * @brief     sets parameters from ROS parameter server
-  * @param     config, struct containing all the parameters
-  * @param     level, bitmask to group together reconfigurable parameters
-  **/
-  void dynamicReconfigureSetParams(avoidance::LocalPlannerNodeConfig& config, uint32_t level);
+
+  // New method to update parameters that were previously set by dynamic_reconfigure
+  void updateAlgorithmParams(
+      int new_children_per_node, int new_n_expanded_nodes,
+      float new_min_sensor_range, float new_max_sensor_range,
+      float new_smoothing_margin_degrees, float new_max_point_age_s,
+      float new_speed, /* Add other relevant parameters from LocalPlannerNodeConfig */
+      const costParameters& new_cost_params // cost_params were part of dyn reconf before
+  );
+
 
   /**
   * @brief     getter method for current vehicle orientation
@@ -190,7 +195,7 @@ class LocalPlanner {
   * @brief     getter method for obstacle distance information
   * @param     obstacle_distance, obstacle distance message to fill
   **/
-  void getObstacleDistanceData(sensor_msgs::LaserScan& obstacle_distance);
+  void getObstacleDistanceData(sensor_msgs::msg::LaserScan& obstacle_distance); // Updated type
 
   /**
   * @brief     getter method of the local planner algorithm

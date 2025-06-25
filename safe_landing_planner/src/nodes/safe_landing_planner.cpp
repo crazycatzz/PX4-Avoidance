@@ -1,5 +1,7 @@
 #include "safe_landing_planner/safe_landing_planner.hpp"
-#include "avoidance/common.h"
+#include "avoidance/common.h" // Uses rclcpp::Time etc.
+#include <rclcpp/logging.hpp> // For RCLCPP_INFO, RCLCPP_DEBUG
+#include <cmath> // For std::abs, std::isnan, powf, sqrtf
 
 namespace avoidance {
 
@@ -26,9 +28,9 @@ void SafeLandingPlanner::processPointcloud() {
   grid_.setFilterLimits(position_);
   grid_seq_ += 1;
   grid_.reset();
-  visualization_cloud_.header = cloud_.header;
+  visualization_cloud_.header = cloud_.header; // PCL header assignment
   visualization_cloud_.points.clear();
-  ROS_INFO("Input cloud size %lu ", cloud_.points.size());
+  RCLCPP_INFO(rclcpp::get_logger("safe_landing_planner_alg"), "Input cloud size %zu ", cloud_.points.size());
   for (const pcl::PointXYZ& xyz : cloud_) {
     if (!std::isnan(xyz.x) && !std::isnan(xyz.y) && !std::isnan(xyz.z)) {
       // check if point is inside the grid
@@ -171,24 +173,37 @@ std::pair<float, float> SafeLandingPlanner::computeOnlineMeanVariance(float prev
   return pair;
 }
 
-// set parameters changed by dynamic rconfigure
-void SafeLandingPlanner::dynamicReconfigureSetParams(const safe_landing_planner::SafeLandingPlannerNodeConfig& config,
-                                                     uint32_t level) {
-  size_update_ = false;
-  n_points_thr_ = static_cast<float>(config.n_points_threshold);
-  std_dev_thr_ = static_cast<float>(config.std_dev_threshold);
-  smoothing_size_ = config.smoothing_size;
-  mean_diff_thr_ = static_cast<float>(config.mean_diff_thr);
-  max_n_mean_diff_cells_ = config.max_n_mean_diff_cells;
-  grid_size_ = static_cast<float>(config.grid_size);
-  cell_size_ = static_cast<float>(config.cell_size);
-  alpha_ = static_cast<float>(config.alpha);
-  timeout_critical_ = config.timeout_critical;
-  timeout_termination_ = config.timeout_termination;
-  min_n_land_cells_ = config.min_n_land_cells;
-  if ((grid_.getGridSize() != grid_size_) || (grid_.getCellSize() != cell_size_) ||
-      (n_lines_padding_ != smoothing_size_)) {
+// Removed dynamicReconfigureSetParams method.
+// Implement the new updateSLPParams method.
+void SafeLandingPlanner::updateSLPParams(
+    float new_n_points_thr, float new_std_dev_thr, float new_grid_size_param, float new_cell_size_param,
+    float new_mean_diff_thr, float new_alpha_param, int new_n_lines_padding_param,
+    int new_max_n_mean_diff_cells, int new_smoothing_size_param, int new_min_n_land_cells,
+    double new_timeout_critical, double new_timeout_termination, bool new_play_rosbag) {
+
+  n_points_thr_ = new_n_points_thr;
+  std_dev_thr_ = new_std_dev_thr;
+  mean_diff_thr_ = new_mean_diff_thr;
+  alpha_ = new_alpha_param;
+  max_n_mean_diff_cells_ = new_max_n_mean_diff_cells;
+  min_n_land_cells_ = new_min_n_land_cells;
+  timeout_critical_ = new_timeout_critical;
+  timeout_termination_ = new_timeout_termination;
+  play_rosbag_ = new_play_rosbag;
+
+  // Check if grid parameters or smoothing size changed to trigger resize
+  if (std::abs(grid_size_ - new_grid_size_param) > 1e-3 ||
+      std::abs(cell_size_ - new_cell_size_param) > 1e-3 ||
+      smoothing_size_ != new_smoothing_size_param) {
+    grid_size_ = new_grid_size_param;
+    cell_size_ = new_cell_size_param;
+    smoothing_size_ = new_smoothing_size_param;
     size_update_ = true;
   }
+  // n_lines_padding_ was set equal to smoothing_size_ in original dyn reconf logic implicitly by its usage pattern
+  // or was meant to be config.smoothing_size. For now, assume it's same as smoothing_size_.
+  n_lines_padding_ = new_smoothing_size_param;
+
+  RCLCPP_DEBUG(rclcpp::get_logger("safe_landing_planner_alg"), "SLP algorithm params updated.");
 }
 }

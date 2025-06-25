@@ -6,7 +6,7 @@ Cell::Cell() = default;
 Cell::Cell(std::tuple<int, int, int> new_tuple) : tpl_(new_tuple) {}
 Cell::Cell(double x, double y, double z) : tpl_(floor(x / CELL_SCALE), floor(y / CELL_SCALE), floor(z / CELL_SCALE)) {}
 Cell::Cell(double x, double y) : Cell(x, y, 0.0) {}
-Cell::Cell(geometry_msgs::Point point) : Cell(point.x, point.y, point.z) {}
+Cell::Cell(const geometry_msgs::msg::Point& point) : Cell(point.x, point.y, point.z) {} // Updated type
 
 int Cell::xIndex() const { return std::get<0>(tpl_); }
 int Cell::yIndex() const { return std::get<1>(tpl_); }
@@ -16,8 +16,8 @@ double Cell::xPos() const { return CELL_SCALE * (xIndex() + 0.5); }
 double Cell::yPos() const { return CELL_SCALE * (yIndex() + 0.5); }
 double Cell::zPos() const { return CELL_SCALE * (zIndex() + 0.5); }
 
-geometry_msgs::Point Cell::toPoint() const {
-  geometry_msgs::Point point;
+geometry_msgs::msg::Point Cell::toPoint() const { // Updated type
+  geometry_msgs::msg::Point point; // Updated type
   point.x = xPos();
   point.y = yPos();
   point.z = zPos();
